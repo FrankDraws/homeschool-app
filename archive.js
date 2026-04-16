@@ -222,9 +222,10 @@ function init() {
   _archive = loadArchive();
 
   const sub = document.getElementById('archive-subtitle');
-  sub.textContent = _archive.length === 0
+  const weekCount = _archive.length === 0
     ? 'No archived weeks yet'
     : `${_archive.length} week${_archive.length !== 1 ? 's' : ''} archived`;
+  sub.textContent = `${weekCount} · ${lastExportLabel()}`;
 
   renderSidebar();
 
@@ -233,6 +234,20 @@ function init() {
     _currentEntry = _archive[0];
     renderSidebar();
     renderDetail(_archive[0]);
+  }
+
+  // Manual export button
+  const exportBtn = document.getElementById('btn-export');
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+      exportAll('full-backup');
+      // Refresh subtitle to show updated export time
+      const updatedSub = document.getElementById('archive-subtitle');
+      const wc = _archive.length === 0
+        ? 'No archived weeks yet'
+        : `${_archive.length} week${_archive.length !== 1 ? 's' : ''} archived`;
+      updatedSub.textContent = `${wc} · ${lastExportLabel()}`;
+    });
   }
 }
 

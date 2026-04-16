@@ -451,6 +451,8 @@ function editStudentName(id) {
 }
 
 /* ── MANAGE STUDENTS MODAL ───────────────────────────────── */
+document.getElementById('btn-manage').addEventListener('click', () => openManageStudents());
+
 function openManageStudents() {
   renderStudentList();
   showModal('modal-students');
@@ -591,7 +593,8 @@ document.getElementById('btn-close-week').addEventListener('click', () => {
   state.currentWeekKey = getWeekKey(nextMon);
 
   save(); updateWeekLabel(); renderGrid();
-  toast('Week archived ✓');
+  autoExportOnCloseWeek(weekLabel(wk));
+  toast('Week archived ✓ — backup downloaded');
 });
 
 /* ── ARCHIVE VIEW — see archive.html + archive.js ── */
@@ -634,6 +637,7 @@ function init() {
   state.currentWeekKey = getWeekKey();
   updateWeekLabel();
   renderGrid();
+  checkPeriodicExport();
 }
 
 init();
