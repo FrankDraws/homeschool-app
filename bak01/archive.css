@@ -1,19 +1,9 @@
 /* ─── ARCHIVE PAGE LAYOUT ────────────────────────────────── */
-/* Ensure #app fills viewport on archive page the same way it does on tracker */
-html, body { height: 100%; }
-
-#app {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
-}
-
 .archive-main {
   display: flex;
   flex: 1;
   overflow: hidden;
-  min-height: 0; /* critical for nested flex scroll */
+  height: calc(100vh - 57px); /* subtract header height */
 }
 
 /* ─── SIDEBAR ────────────────────────────────────────────── */

@@ -3,190 +3,518 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Reset — Dev Utility</title>
+<title>Data Management — Homeschool Tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800&family=Nunito+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #f5f4f0;
+    --surface:  #ffffff;
+    --border:   #e8e6e0;
+    --text:     #2c2a26;
+    --muted:    #7a7570;
+    --faint:    #b0ada8;
+    --accent:   #4a90d9;
+    --success:  #3aaa60;
+    --danger:   #e05252;
+    --warn:     #f0a030;
+    --radius:   14px;
+    --shadow:   0 8px 32px rgba(0,0,0,0.09), 0 2px 8px rgba(0,0,0,0.05);
+  }
+
   body {
-    font-family: 'Nunito', sans-serif;
-    background: #f5f4f0;
+    font-family: 'Nunito Sans', sans-serif;
+    background: var(--bg);
     min-height: 100vh;
+    padding: 32px 24px 48px;
+    color: var(--text);
+  }
+
+  .page-header {
     display: flex;
     align-items: center;
-    justify-content: center;
-    padding: 24px;
+    gap: 14px;
+    max-width: 580px;
+    margin: 0 auto 28px;
   }
-  .card {
-    background: white;
-    border-radius: 20px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-    padding: 40px 48px;
-    max-width: 480px;
-    width: 100%;
-    text-align: center;
-  }
-  .icon { font-size: 2.8rem; margin-bottom: 16px; }
-  .title {
-    font-size: 1.3rem;
-    font-weight: 800;
-    color: #2c2a26;
-    margin-bottom: 8px;
-  }
-  .subtitle {
-    font-size: 0.88rem;
-    color: #7a7570;
-    line-height: 1.6;
-    margin-bottom: 28px;
-  }
-  .keys-list {
-    background: #f9f8f5;
-    border: 1.5px solid #e8e6e0;
-    border-radius: 10px;
-    padding: 14px 18px;
-    margin-bottom: 28px;
-    text-align: left;
-  }
-  .keys-list p {
-    font-size: 0.75rem;
-    color: #b0ada8;
+
+  .page-header a {
+    font-family: 'Nunito', sans-serif;
+    font-size: 0.82rem;
     font-weight: 700;
+    color: var(--muted);
+    text-decoration: none;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 12px;
+    background: var(--surface);
+    transition: background 0.15s;
+  }
+  .page-header a:hover { background: var(--bg); }
+
+  .page-title {
+    font-family: 'Nunito', sans-serif;
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--text);
+  }
+
+  .dev-badge {
+    display: inline-block;
+    background: #fef4e5;
+    color: var(--warn);
+    border-radius: 99px;
+    padding: 2px 9px;
+    font-size: 0.65rem;
+    font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.06em;
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 28px 32px;
+    max-width: 580px;
+    margin: 0 auto 20px;
+  }
+
+  .card-title {
+    font-family: 'Nunito', sans-serif;
+    font-size: 1rem;
+    font-weight: 800;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card-subtitle {
+    font-size: 0.82rem;
+    color: var(--muted);
+    line-height: 1.55;
+    margin-bottom: 20px;
+  }
+
+  /* ── FILE DROP ZONE ── */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 28px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    margin-bottom: 16px;
+    position: relative;
+  }
+  .drop-zone:hover, .drop-zone.dragover {
+    border-color: var(--accent);
+    background: #f0f7ff;
+  }
+  .drop-zone input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+  }
+  .drop-icon { font-size: 1.8rem; margin-bottom: 8px; }
+  .drop-label {
+    font-family: 'Nunito', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--muted);
+  }
+  .drop-label span {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+  .drop-hint {
+    font-size: 0.72rem;
+    color: var(--faint);
+    margin-top: 4px;
+  }
+
+  /* ── PREVIEW PANEL ── */
+  .preview-panel {
+    display: none;
+    background: #f9f8f5;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin-bottom: 16px;
+  }
+
+  .preview-panel.visible { display: block; }
+
+  .preview-label {
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--faint);
+    margin-bottom: 10px;
+  }
+
+  .preview-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 5px 0;
+    border-bottom: 1px solid #ece9e3;
+    font-size: 0.83rem;
+  }
+  .preview-row:last-child { border-bottom: none; }
+  .preview-key { color: var(--muted); font-weight: 600; }
+  .preview-val { font-family: 'Nunito', sans-serif; font-weight: 700; color: var(--text); }
+
+  .preview-students {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #ece9e3;
+  }
+  .preview-students-label {
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--faint);
+    margin-bottom: 6px;
+  }
+  .preview-student-pill {
+    display: inline-block;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 99px;
+    padding: 3px 10px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    font-family: 'Nunito', sans-serif;
+    margin: 3px 4px 3px 0;
+    color: var(--text);
+  }
+
+  .preview-error {
+    color: var(--danger);
+    font-size: 0.82rem;
+    font-weight: 700;
+    padding: 10px 0 4px;
+    display: none;
+  }
+  .preview-error.visible { display: block; }
+
+  /* ── BUTTONS ── */
+  .btn {
+    font-family: 'Nunito', sans-serif;
+    font-size: 0.88rem;
+    font-weight: 800;
+    padding: 11px 24px;
+    border-radius: 10px;
+    border: none;
+    cursor: pointer;
+    width: 100%;
+    margin-bottom: 8px;
+    transition: background 0.15s, opacity 0.15s;
+  }
+  .btn:disabled { opacity: 0.38; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:not(:disabled):hover { background: #3a7fc8; }
+  .btn-danger  { background: var(--danger); color: white; }
+  .btn-danger:not(:disabled):hover  { background: #c84040; }
+  .btn-ghost {
+    background: transparent;
+    color: var(--muted);
+    border: 1.5px solid var(--border);
+  }
+  .btn-ghost:hover { background: var(--bg); }
+
+  /* ── STORAGE TABLE ── */
+  .storage-table {
+    background: #f9f8f5;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+  }
+  .storage-table-label {
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--faint);
     margin-bottom: 8px;
   }
   .key-row {
     display: flex;
-    align-items: center;
     justify-content: space-between;
-    padding: 4px 0;
+    align-items: center;
+    padding: 5px 0;
     font-size: 0.82rem;
-    color: #2c2a26;
-    border-bottom: 1px solid #f0ede8;
+    border-bottom: 1px solid #ece9e3;
   }
   .key-row:last-child { border-bottom: none; }
-  .key-name { font-weight: 700; font-family: monospace; font-size: 0.8rem; }
-  .key-size { color: #b0ada8; font-size: 0.75rem; }
-  .btn-reset {
-    background: #e05252;
-    color: white;
-    border: none;
+  .key-name { font-weight: 700; font-family: monospace; font-size: 0.78rem; }
+  .key-size { color: var(--faint); font-size: 0.75rem; }
+
+  /* ── ALERTS ── */
+  .alert {
     border-radius: 10px;
-    padding: 13px 28px;
-    font-family: 'Nunito', sans-serif;
-    font-size: 0.9rem;
-    font-weight: 800;
-    cursor: pointer;
-    width: 100%;
-    margin-bottom: 10px;
-    transition: background 0.15s;
-  }
-  .btn-reset:hover { background: #c84040; }
-  .btn-back {
-    background: transparent;
-    color: #7a7570;
-    border: 1.5px solid #e8e6e0;
-    border-radius: 10px;
-    padding: 10px 28px;
-    font-family: 'Nunito', sans-serif;
-    font-size: 0.85rem;
+    padding: 11px 14px;
+    font-size: 0.83rem;
     font-weight: 700;
-    cursor: pointer;
-    width: 100%;
-    text-decoration: none;
-    display: block;
-    transition: background 0.15s;
-  }
-  .btn-back:hover { background: #f5f4f0; }
-  .success-msg {
-    display: none;
-    background: #edf7ed;
-    color: #3aaa60;
-    border-radius: 10px;
-    padding: 12px;
-    font-weight: 700;
-    font-size: 0.88rem;
     margin-bottom: 12px;
+    display: none;
   }
-  .dev-badge {
-    display: inline-block;
-    background: #fef4e5;
-    color: #f0a030;
-    border-radius: 99px;
-    padding: 3px 10px;
-    font-size: 0.68rem;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    margin-bottom: 16px;
+  .alert.visible { display: block; }
+  .alert-success { background: #edf7ed; color: var(--success); }
+  .alert-danger  { background: #fdeaea; color: var(--danger); }
+  .alert-info    { background: #e8f2fc; color: var(--accent); }
+
+  /* ── DIVIDER ── */
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 4px 0 20px;
   }
 </style>
 </head>
 <body>
 
+<div class="page-header">
+  <a href="index.html">‹ Tracker</a>
+  <h1 class="page-title">Data Management <span class="dev-badge">Dev</span></h1>
+</div>
+
+<!-- ── IMPORT CARD ── -->
 <div class="card">
-  <div class="icon">🗑️</div>
-  <div class="dev-badge">Dev Utility</div>
-  <div class="title">Reset All Data</div>
-  <p class="subtitle">
-    Clears all localStorage data for the Homeschool Tracker —
-    students, courses, week checks, overrides, and archive.
-    This cannot be undone.
+  <div class="card-title">⬆️ Import from Backup</div>
+  <p class="card-subtitle">
+    Select a <code>.json</code> backup file exported from this tracker.
+    You'll see a preview before anything is changed.
   </p>
 
-  <div class="keys-list">
-    <p>Storage keys</p>
-    <div id="keys-preview"><!-- built by JS --></div>
+  <div class="drop-zone" id="drop-zone">
+    <input type="file" id="file-input" accept=".json">
+    <div class="drop-icon">📂</div>
+    <div class="drop-label"><span>Choose a file</span> or drag it here</div>
+    <div class="drop-hint">Only .json files exported by this tracker</div>
   </div>
 
-  <div class="success-msg" id="success-msg">✓ All data cleared. Ready for a fresh start.</div>
+  <div class="preview-error" id="preview-error"></div>
 
-  <button class="btn-reset" id="btn-reset">Reset Everything</button>
-  <a href="index.html" class="btn-back">‹ Back to Tracker</a>
+  <div class="preview-panel" id="preview-panel">
+    <div class="preview-label">Backup Preview</div>
+    <div id="preview-rows"></div>
+    <div class="preview-students" id="preview-students"></div>
+  </div>
+
+  <div class="alert alert-success" id="import-success">✓ Data restored successfully. <a href="index.html" style="color:inherit;text-decoration:underline">Go to Tracker →</a></div>
+  <div class="alert alert-danger"  id="import-error"></div>
+
+  <button class="btn btn-primary" id="btn-import" disabled>Restore This Backup</button>
+  <button class="btn btn-ghost"   id="btn-clear-file" style="display:none">✕ Clear selected file</button>
+</div>
+
+<!-- ── RESET CARD ── -->
+<div class="card">
+  <div class="card-title">🗑️ Reset All Data</div>
+  <p class="card-subtitle">
+    Permanently clears all tracker data from this browser —
+    students, courses, week checks, overrides, and archive.
+    Cannot be undone. Export a backup first if needed.
+  </p>
+
+  <div class="storage-table">
+    <div class="storage-table-label">Current storage</div>
+    <div id="keys-preview"></div>
+  </div>
+
+  <div class="alert alert-success" id="reset-success">✓ All data cleared. Ready for a fresh start.</div>
+
+  <button class="btn btn-danger" id="btn-reset">Reset Everything</button>
 </div>
 
 <script>
-const KEYS = [
-  'hs_students',
-  'hs_overrides',
-  'hs_removals',
-  'hs_hidden',
-  'hs_weeks',
-  'hs_archive',
-];
+const KEYS = ['hs_students','hs_overrides','hs_removals','hs_hidden','hs_weeks','hs_archive'];
 
+/* ── STORAGE TABLE ── */
 function formatBytes(n) {
   if (n === 0) return '—';
   if (n < 1024) return n + ' B';
   return (n / 1024).toFixed(1) + ' KB';
 }
 
-function renderPreview() {
+function renderStorageTable() {
   const container = document.getElementById('keys-preview');
   container.innerHTML = '';
   KEYS.forEach(key => {
-    const val = localStorage.getItem(key);
+    const val  = localStorage.getItem(key);
     const size = val ? new Blob([val]).size : 0;
-    const row = document.createElement('div');
+    const row  = document.createElement('div');
     row.className = 'key-row';
-    row.innerHTML = `
-      <span class="key-name">${key}</span>
-      <span class="key-size">${size > 0 ? formatBytes(size) : 'empty'}</span>
-    `;
+    row.innerHTML = `<span class="key-name">${key}</span><span class="key-size">${formatBytes(size)}</span>`;
     container.appendChild(row);
   });
 }
 
+/* ── RESET ── */
 document.getElementById('btn-reset').addEventListener('click', () => {
   if (!confirm('Are you sure? This will permanently delete all tracker data.')) return;
   KEYS.forEach(k => localStorage.removeItem(k));
-  renderPreview();
-  document.getElementById('success-msg').style.display = 'block';
+  renderStorageTable();
+  showAlert('reset-success');
   document.getElementById('btn-reset').disabled = true;
-  document.getElementById('btn-reset').style.opacity = '0.4';
 });
 
-renderPreview();
+/* ── FILE HANDLING ── */
+let _pendingPayload = null;
+
+function handleFile(file) {
+  clearImportState();
+  if (!file || !file.name.endsWith('.json')) {
+    showImportError('Please select a valid .json backup file.');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const payload = JSON.parse(e.target.result);
+      validateAndPreview(payload);
+    } catch {
+      showImportError('Could not parse the file. Make sure it\'s a valid tracker backup.');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function validateAndPreview(payload) {
+  // Basic structure check
+  if (!payload.version || !payload.data) {
+    showImportError('This doesn\'t look like a tracker backup file.');
+    return;
+  }
+
+  const data      = payload.data;
+  const students  = data.hs_students  || [];
+  const archive   = data.hs_archive   || [];
+  const exportedAt= payload.exportedAt ? new Date(payload.exportedAt) : null;
+  const fmtDate   = d => d.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' });
+
+  // Build preview rows
+  const rows = document.getElementById('preview-rows');
+  rows.innerHTML = '';
+
+  const previewData = [
+    { key: 'Exported',        val: exportedAt ? fmtDate(exportedAt) : 'Unknown' },
+    { key: 'Students',        val: students.length },
+    { key: 'Archived weeks',  val: archive.length },
+    { key: 'File version',    val: `v${payload.version}` },
+  ];
+
+  previewData.forEach(({ key, val }) => {
+    const row = document.createElement('div');
+    row.className = 'preview-row';
+    row.innerHTML = `<span class="preview-key">${key}</span><span class="preview-val">${val}</span>`;
+    rows.appendChild(row);
+  });
+
+  // Student pills
+  const studentsEl = document.getElementById('preview-students');
+  if (students.length > 0) {
+    studentsEl.innerHTML = `<div class="preview-students-label">Students in backup</div>`;
+    students.forEach(s => {
+      const pill = document.createElement('span');
+      pill.className = 'preview-student-pill';
+      pill.textContent = s.name;
+      studentsEl.appendChild(pill);
+    });
+  } else {
+    studentsEl.innerHTML = '';
+  }
+
+  document.getElementById('preview-panel').classList.add('visible');
+  document.getElementById('btn-import').disabled = false;
+  document.getElementById('btn-clear-file').style.display = 'block';
+  _pendingPayload = payload;
+}
+
+/* ── IMPORT ── */
+document.getElementById('btn-import').addEventListener('click', () => {
+  if (!_pendingPayload) return;
+  if (!confirm('Replace all current data with this backup? This cannot be undone.')) return;
+
+  try {
+    const data = _pendingPayload.data;
+    KEYS.forEach(key => {
+      if (data[key] !== null && data[key] !== undefined) {
+        localStorage.setItem(key, JSON.stringify(data[key]));
+      } else {
+        localStorage.removeItem(key);
+      }
+    });
+
+    renderStorageTable();
+    showAlert('import-success');
+    document.getElementById('btn-import').disabled = true;
+    document.getElementById('preview-panel').classList.remove('visible');
+    document.getElementById('btn-clear-file').style.display = 'none';
+    _pendingPayload = null;
+  } catch (err) {
+    showImportError('Something went wrong during import: ' + err.message);
+  }
+});
+
+/* ── CLEAR FILE ── */
+document.getElementById('btn-clear-file').addEventListener('click', () => {
+  clearImportState();
+  document.getElementById('file-input').value = '';
+});
+
+/* ── FILE INPUT + DRAG & DROP ── */
+document.getElementById('file-input').addEventListener('change', e => {
+  handleFile(e.target.files[0]);
+});
+
+const dropZone = document.getElementById('drop-zone');
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  handleFile(e.dataTransfer.files[0]);
+});
+
+/* ── HELPERS ── */
+function showAlert(id) {
+  document.getElementById(id).classList.add('visible');
+}
+
+function showImportError(msg) {
+  const el = document.getElementById('preview-error');
+  el.textContent = '⚠ ' + msg;
+  el.classList.add('visible');
+}
+
+function clearImportState() {
+  _pendingPayload = null;
+  document.getElementById('preview-panel').classList.remove('visible');
+  document.getElementById('preview-error').classList.remove('visible');
+  document.getElementById('import-success').classList.remove('visible');
+  document.getElementById('import-error').classList.remove('visible');
+  document.getElementById('btn-import').disabled = true;
+  document.getElementById('btn-clear-file').style.display = 'none';
+}
+
+/* ── INIT ── */
+renderStorageTable();
 </script>
 
 </body>

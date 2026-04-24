@@ -109,87 +109,6 @@ function setCourseCheck(wk, studentId, day, courseId, val) {
   save();
 }
 
-/* ── SUMMARY STRIP ───────────────────────────────────────── */
-function renderSummaryStrip() {
-  const strip = document.getElementById('summary-strip');
-  if (!strip) return;
-  strip.innerHTML = '';
-  if (state.students.length === 0) return;
-
-  const wk   = state.currentWeekKey;
-  const card = document.createElement('div');
-  card.className = 'summary-card';
-
-  state.students.forEach(student => {
-    let total = 0, done = 0;
-    DAYS.forEach(day => {
-      const isHidden = (state.hidden?.[wk]?.[student.id] || []).includes(day);
-      if (isHidden) return;
-      const courses = getCoursesForDay(wk, student.id, day);
-      courses.forEach(course => {
-        total++;
-        if (getCourseCheck(wk, student.id, day, course.id)) done++;
-      });
-    });
-
-    const pct      = total === 0 ? 0 : Math.round((done / total) * 100);
-    const bg       = PALETTE[student.colorIndex % PALETTE.length];
-    const accent   = PALETTE_H[student.colorIndex % PALETTE_H.length];
-    const initials = student.name.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 2);
-    const fillClass= pct >= 80 ? '' : pct >= 40 ? 'warn' : 'low';
-    const pctColor = pct >= 80 ? 'var(--success)' : pct >= 40 ? 'var(--warn)' : 'var(--danger)';
-
-    const el = document.createElement('div');
-    el.className = 'summary-student';
-    el.dataset.studentId = student.id;
-    el.innerHTML = `
-      <div class="summary-avatar" style="background:${bg};color:${accent}">${initials}</div>
-      <span class="summary-name" style="color:${accent}">${escHtml(student.name)}</span>
-      <div class="summary-bar-bg">
-        <div class="summary-bar-fill ${fillClass}" style="width:${pct}%"></div>
-      </div>
-      <span class="summary-fraction">${done}/${total}</span>
-      <span class="summary-pct" style="color:${pctColor}">${pct}%</span>
-    `;
-    card.appendChild(el);
-  });
-
-  strip.appendChild(card);
-}
-
-function updateSummaryStudent(studentId) {
-  const strip = document.getElementById('summary-strip');
-  if (!strip) return;
-  const wk      = state.currentWeekKey;
-  const student = state.students.find(s => s.id === studentId);
-  if (!student) return;
-
-  let total = 0, done = 0;
-  DAYS.forEach(day => {
-    const isHidden = (state.hidden?.[wk]?.[student.id] || []).includes(day);
-    if (isHidden) return;
-    const courses = getCoursesForDay(wk, student.id, day);
-    courses.forEach(course => {
-      total++;
-      if (getCourseCheck(wk, student.id, day, course.id)) done++;
-    });
-  });
-
-  const pct      = total === 0 ? 0 : Math.round((done / total) * 100);
-  const fillClass= pct >= 80 ? '' : pct >= 40 ? 'warn' : 'low';
-  const pctColor = pct >= 80 ? 'var(--success)' : pct >= 40 ? 'var(--warn)' : 'var(--danger)';
-
-  const el = strip.querySelector(`.summary-card [data-student-id="${studentId}"]`);
-  if (!el) return;
-  const fill     = el.querySelector('.summary-bar-fill');
-  const fraction = el.querySelector('.summary-fraction');
-  const pctEl    = el.querySelector('.summary-pct');
-
-  if (fill)     { fill.style.width = pct + '%'; fill.className = `summary-bar-fill ${fillClass}`; }
-  if (fraction) fraction.textContent = `${done}/${total}`;
-  if (pctEl)    { pctEl.textContent = pct + '%'; pctEl.style.color = pctColor; }
-}
-
 /* ── RENDER GRID ─────────────────────────────────────────── */
 function renderGrid() {
   const grid = document.getElementById('week-grid');
@@ -225,8 +144,6 @@ function renderGrid() {
     col.appendChild(cards);
     grid.appendChild(col);
   });
-
-  renderSummaryStrip();
 }
 
 /* ── BUILD CARD ──────────────────────────────────────────── */
@@ -345,7 +262,6 @@ function buildCourseItem(card, student, day, course) {
     item.classList.toggle('done', ev.target.checked);
     const prog = card.querySelector('.card-progress');
     if (prog) refreshProgressBar(prog, student, day, getCoursesForDay(wk, student.id, day));
-    updateSummaryStudent(student.id);
   });
 
   item.querySelector('[data-action="remove-course"]').addEventListener('click', () => {
