@@ -252,9 +252,15 @@ function buildCard(student, day) {
       <span class="card-name" style="color:${accent}">${escHtml(student.name)}</span>
     </div>
     <div class="card-actions">
+      <button class="btn-icon" title="Add course to specific days" data-action="add-day-course">＋</button>
       <button class="btn-icon" title="More options" data-action="more">•••</button>
     </div>
   `;
+
+  hdr.querySelector('[data-action="add-day-course"]').addEventListener('click', e => {
+    e.stopPropagation();
+    openAddDayCourseModal(student.id, day);
+  });
 
   hdr.querySelector('[data-action="more"]').addEventListener('click', e => {
     e.stopPropagation();
@@ -268,7 +274,7 @@ function buildCard(student, day) {
   body.className = 'card-body';
 
   if (courses.length === 0) {
-    body.innerHTML = `<div class="card-empty">No courses for this day.<br><small>Use <strong>•••</strong> to add or edit courses.</small></div>`;
+    body.innerHTML = `<div class="card-empty">No courses for this day.<br><small>Tap <strong>＋</strong> to add, or use <strong>•••</strong> to edit defaults.</small></div>`;
   } else {
     courses.forEach(course => {
       body.appendChild(buildCourseItem(card, student, day, course));
@@ -389,32 +395,16 @@ function refreshProgressBar(progEl, student, day, courses) {
   if (lbl)  lbl.textContent  = `${done}/${total}`;
 }
 
-/* ── ADD COURSE MODAL ────────────────────────────────────── */
+/* ── ADD DAY-COURSE MODAL ────────────────────────────────── */
 let _dayCourseCtx = { studentId: null, originDay: null };
 
 function openAddDayCourseModal(studentId, originDay) {
   _dayCourseCtx = { studentId, originDay };
+  const student  = state.students.find(s => s.id === studentId);
   const originDi = DAYS.indexOf(originDay);
 
-  // Populate student checkboxes
-  const studentPickers = document.getElementById('dc-student-pickers');
-  studentPickers.innerHTML = '';
-  state.students.forEach(s => {
-    const cbId = `dc-stu-${s.id}`;
-    const label = document.createElement('label');
-    label.className = 'day-pill';
-    label.setAttribute('for', cbId);
-    const isChecked = s.id === studentId;
-    label.innerHTML = `<input type="checkbox" id="${cbId}" data-student-id="${s.id}" ${isChecked ? 'checked' : ''}><span>${escHtml(s.name)}</span>`;
-    studentPickers.appendChild(label);
-  });
-
+  document.getElementById('day-course-student-name').textContent = student.name;
   document.getElementById('day-course-input').value = '';
-
-  // Reset scope toggle to "specific days"
-  document.getElementById('dc-scope-all').classList.remove('active');
-  document.getElementById('dc-scope-days').classList.add('active');
-  document.getElementById('dc-day-picker-section').style.display = '';
 
   // Pre-check origin day + days after
   DAYS.forEach((_, i) => {
@@ -425,19 +415,6 @@ function openAddDayCourseModal(studentId, originDay) {
   showModal('modal-day-course');
   setTimeout(() => document.getElementById('day-course-input').focus(), 60);
 }
-
-// Scope toggle
-document.getElementById('dc-scope-all').addEventListener('click', () => {
-  document.getElementById('dc-scope-all').classList.add('active');
-  document.getElementById('dc-scope-days').classList.remove('active');
-  document.getElementById('dc-day-picker-section').style.display = 'none';
-});
-
-document.getElementById('dc-scope-days').addEventListener('click', () => {
-  document.getElementById('dc-scope-days').classList.add('active');
-  document.getElementById('dc-scope-all').classList.remove('active');
-  document.getElementById('dc-day-picker-section').style.display = '';
-});
 
 document.getElementById('btn-save-day-course').addEventListener('click', saveDayCourse);
 document.getElementById('day-course-input').addEventListener('keydown', e => {
@@ -459,64 +436,39 @@ document.getElementById('dc-all').addEventListener('click', () => {
   });
 });
 
+
 function saveDayCourse() {
   const label = document.getElementById('day-course-input').value.trim();
   if (!label) { document.getElementById('day-course-input').focus(); return; }
 
-  // Which students?
-  const selectedStudentIds = [...document.querySelectorAll('#dc-student-pickers input:checked')]
-    .map(cb => cb.dataset.studentId);
-  if (selectedStudentIds.length === 0) { toast('Select at least one student.'); return; }
-
-  const isAllWeek = document.getElementById('dc-scope-all').classList.contains('active');
-
-  if (isAllWeek) {
-    // Save as true default course on the student object
-    selectedStudentIds.forEach(studentId => {
-      const student = state.students.find(s => s.id === studentId);
-      if (!student) return;
-      if (!student.courses) student.courses = [];
-      const already = student.courses.some(c => c.label.toLowerCase() === label.toLowerCase());
-      if (!already) {
-        student.courses.push({ id: uid(), label });
-      }
-    });
-    save();
-    closeModal('modal-day-course');
-    renderGrid();
-    toast(`"${label}" added as default for ${selectedStudentIds.length} student${selectedStudentIds.length > 1 ? 's' : ''}`);
-    return;
-  }
-
-  // Specific days — save as override
   const selectedDays = DAYS.filter((_, i) => {
     const cb = document.getElementById(`dc-day-${i}`);
     return cb && cb.checked;
   });
+
   if (selectedDays.length === 0) { toast('Pick at least one day.'); return; }
 
-  const wk     = state.currentWeekKey;
-  const baseId = uid();
+  const wk        = state.currentWeekKey;
+  const studentId = _dayCourseCtx.studentId;
+  const baseId    = uid();
 
-  selectedStudentIds.forEach(studentId => {
-    if (!state.overrides[wk]) state.overrides[wk] = {};
-    if (!state.overrides[wk][studentId]) state.overrides[wk][studentId] = {};
-    selectedDays.forEach(day => {
-      if (!state.overrides[wk][studentId][day]) state.overrides[wk][studentId][day] = [];
-      const already = state.overrides[wk][studentId][day].some(
-        c => c.label.toLowerCase() === label.toLowerCase()
-      );
-      if (!already) {
-        state.overrides[wk][studentId][day].push({ id: `${baseId}_${studentId}_${day}`, label });
-      }
-    });
+  if (!state.overrides[wk]) state.overrides[wk] = {};
+  if (!state.overrides[wk][studentId]) state.overrides[wk][studentId] = {};
+
+  selectedDays.forEach(day => {
+    if (!state.overrides[wk][studentId][day]) state.overrides[wk][studentId][day] = [];
+    const already = state.overrides[wk][studentId][day].some(
+      c => c.label.toLowerCase() === label.toLowerCase()
+    );
+    if (!already) {
+      state.overrides[wk][studentId][day].push({ id: `${baseId}_${day}`, label });
+    }
   });
 
   save();
   closeModal('modal-day-course');
   renderGrid();
-  const dayCount = selectedDays.length;
-  toast(`"${label}" added to ${selectedStudentIds.length} student${selectedStudentIds.length > 1 ? 's' : ''}, ${dayCount} day${dayCount > 1 ? 's' : ''}`);
+  toast(`"${label}" added to ${selectedDays.length} day${selectedDays.length > 1 ? 's' : ''}`);
 }
 
 /* ── CARD CONTEXT MENU ───────────────────────────────────── */
@@ -526,9 +478,9 @@ function openCardMenu(btn, student, day) {
   const menu = document.createElement('div');
   menu.className = 'dropdown-menu dropdown-menu-portal';
   menu.innerHTML = `
-    <button class="dropdown-item" data-action="add-day">＋  Add Course…</button>
+    <button class="dropdown-item" data-action="add-day">＋  Add Course (this day)</button>
     <button class="dropdown-item" data-action="edit-defaults">📚  Edit Default Courses</button>
-    <button class="dropdown-item" data-action="edit-name">✏️  Rename Student</button>
+    <button class="dropdown-item" data-action="edit-name">✏️  Edit Name</button>
     <button class="dropdown-item" data-action="hide-day">🚫  Hide card this day</button>
     <button class="dropdown-item danger" data-action="delete">🗑  Remove Student</button>
   `;

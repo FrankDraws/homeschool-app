@@ -49,9 +49,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ─── UTILITIES ─────────────────────────────────────────── */
-.hidden { display: none !important; }
-
 /* ─── LAYOUT ─────────────────────────────────────────────── */
 #app {
   display: flex;
@@ -750,39 +747,6 @@ body {
   transition: opacity 0.3s ease;
 }
 .toast.hidden { opacity: 0; }
-
-/* ─── SCOPE TOGGLE ───────────────────────────────────────── */
-.scope-toggle {
-  display: flex;
-  gap: 7px;
-}
-
-.scope-btn {
-  border-radius: 99px !important;
-  transition: all var(--transition);
-}
-
-.scope-btn.active {
-  background: var(--accent) !important;
-  color: white !important;
-  border-color: var(--accent) !important;
-}
-
-/* Student pickers share day-pill styling */
-#dc-student-pickers {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-
-/* Ensure span text is always visible in student pills */
-#dc-student-pickers .day-pill span {
-  color: var(--text-secondary);
-}
-
-#dc-student-pickers .day-pill input:checked + span {
-  color: white;
-}
 
 /* ─── DAY PICKER ─────────────────────────────────────────── */
 .field-label {

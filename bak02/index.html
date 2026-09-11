@@ -81,39 +81,24 @@
 <div class="modal-backdrop hidden" id="modal-day-course">
   <div class="modal">
     <div class="modal-header">
-      <h2>Add Course</h2>
+      <h2>Add Course for <span id="day-course-student-name"></span></h2>
       <button class="modal-close" data-close="modal-day-course">✕</button>
     </div>
     <div class="modal-body">
-
       <p class="field-label">Course name</p>
-      <input class="input-inline" id="day-course-input" placeholder="e.g. Math, Art, Lab…" style="width:100%;margin-bottom:18px">
-
-      <p class="field-label">Add for</p>
-      <div class="day-picker" style="margin-bottom:14px">
-        <div id="dc-student-pickers"><!-- built by JS --></div>
+      <input class="input-inline" id="day-course-input" placeholder="e.g. Art, Lab, Music…" style="width:100%;margin-bottom:18px">
+      <p class="field-label">Apply to days</p>
+      <div class="day-picker">
+        <label class="day-pill" for="dc-day-0"><input type="checkbox" id="dc-day-0"><span>Mon</span></label>
+        <label class="day-pill" for="dc-day-1"><input type="checkbox" id="dc-day-1"><span>Tue</span></label>
+        <label class="day-pill" for="dc-day-2"><input type="checkbox" id="dc-day-2"><span>Wed</span></label>
+        <label class="day-pill" for="dc-day-3"><input type="checkbox" id="dc-day-3"><span>Thu</span></label>
+        <label class="day-pill" for="dc-day-4"><input type="checkbox" id="dc-day-4"><span>Fri</span></label>
       </div>
-
-      <p class="field-label">Schedule</p>
-      <div class="scope-toggle" style="margin-bottom:14px">
-        <button class="btn btn-ghost btn-sm scope-btn" id="dc-scope-all">Every day (default)</button>
-        <button class="btn btn-ghost btn-sm scope-btn active" id="dc-scope-days">Specific days</button>
+      <div class="day-picker-shortcuts">
+        <button class="btn btn-ghost btn-sm" id="dc-just-this">Just this day</button>
+        <button class="btn btn-ghost btn-sm" id="dc-all">All week</button>
       </div>
-
-      <div id="dc-day-picker-section">
-        <div class="day-picker">
-          <label class="day-pill" for="dc-day-0"><input type="checkbox" id="dc-day-0"><span>Mon</span></label>
-          <label class="day-pill" for="dc-day-1"><input type="checkbox" id="dc-day-1"><span>Tue</span></label>
-          <label class="day-pill" for="dc-day-2"><input type="checkbox" id="dc-day-2"><span>Wed</span></label>
-          <label class="day-pill" for="dc-day-3"><input type="checkbox" id="dc-day-3"><span>Thu</span></label>
-          <label class="day-pill" for="dc-day-4"><input type="checkbox" id="dc-day-4"><span>Fri</span></label>
-        </div>
-        <div class="day-picker-shortcuts">
-          <button class="btn btn-ghost btn-sm" id="dc-just-this">Just this day</button>
-          <button class="btn btn-ghost btn-sm" id="dc-all">All week</button>
-        </div>
-      </div>
-
     </div>
     <div class="modal-footer">
       <button class="btn btn-primary" id="btn-save-day-course">Add Course</button>
