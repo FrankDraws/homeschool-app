@@ -28,8 +28,10 @@
     </div>
     <div class="header-right">
       <a href="archive.html" class="btn btn-ghost">📋 Archive</a>
+      <a href="planner.html" class="btn btn-ghost">📅 Plan Week</a>
       <button class="btn btn-ghost" id="btn-manage">⚙ Manage Students</button>
       <button class="btn btn-primary" id="btn-close-week">Close Week</button>
+      <button class="btn btn-ghost" id="btn-logout">Sign Out</button>
     </div>
   </header>
 
@@ -55,76 +57,13 @@
     <div class="modal-body" id="student-list-editor">
       <!-- built by JS -->
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-primary" id="btn-add-student">+ Add Student</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL: Default Courses -->
-<div class="modal-backdrop hidden" id="modal-courses">
-  <div class="modal">
-    <div class="modal-header">
-      <h2 id="courses-modal-title">Edit Courses</h2>
-      <button class="modal-close" data-close="modal-courses">✕</button>
-    </div>
-    <div class="modal-body" id="course-list-editor">
-      <!-- built by JS -->
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-primary" id="btn-add-course">+ Add Course</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL: Add Day-Specific Course -->
-<div class="modal-backdrop hidden" id="modal-day-course">
-  <div class="modal">
-    <div class="modal-header">
-      <h2>Add Course</h2>
-      <button class="modal-close" data-close="modal-day-course">✕</button>
-    </div>
-    <div class="modal-body">
-
-      <p class="field-label">Course name</p>
-      <input class="input-inline" id="day-course-input" placeholder="e.g. Math, Art, Lab…" style="width:100%;margin-bottom:18px">
-
-      <p class="field-label">Add for</p>
-      <div class="day-picker" style="margin-bottom:14px">
-        <div id="dc-student-pickers"><!-- built by JS --></div>
-      </div>
-
-      <p class="field-label">Schedule</p>
-      <div class="scope-toggle" style="margin-bottom:14px">
-        <button class="btn btn-ghost btn-sm scope-btn" id="dc-scope-all">Every day (default)</button>
-        <button class="btn btn-ghost btn-sm scope-btn active" id="dc-scope-days">Specific days</button>
-      </div>
-
-      <div id="dc-day-picker-section">
-        <div class="day-picker">
-          <label class="day-pill" for="dc-day-0"><input type="checkbox" id="dc-day-0"><span>Mon</span></label>
-          <label class="day-pill" for="dc-day-1"><input type="checkbox" id="dc-day-1"><span>Tue</span></label>
-          <label class="day-pill" for="dc-day-2"><input type="checkbox" id="dc-day-2"><span>Wed</span></label>
-          <label class="day-pill" for="dc-day-3"><input type="checkbox" id="dc-day-3"><span>Thu</span></label>
-          <label class="day-pill" for="dc-day-4"><input type="checkbox" id="dc-day-4"><span>Fri</span></label>
-        </div>
-        <div class="day-picker-shortcuts">
-          <button class="btn btn-ghost btn-sm" id="dc-just-this">Just this day</button>
-          <button class="btn btn-ghost btn-sm" id="dc-all">All week</button>
-        </div>
-      </div>
-
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-primary" id="btn-save-day-course">Add Course</button>
-    </div>
   </div>
 </div>
 
 <!-- TOAST -->
 <div id="toast" class="toast hidden"></div>
 
-<script src="export.js"></script>
-<script src="app.js"></script>
+<script type="module" src="export.js"></script>
+<script type="module" src="app.js"></script>
 </body>
 </html>

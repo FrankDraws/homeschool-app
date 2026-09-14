@@ -1,66 +1,30 @@
 /* ─────────────────────────────────────────────────────────────
-   Homeschool Weekly Tracker — v2
-   Storage keys:
-     hs_students  → [{id, name, colorIndex, courses:[{id,label}]}]
-                    courses = "default" courses (shown every day)
-     hs_overrides → {[weekKey]: {[studentId]: {[day]: [{id,label}]}}}
-                    day-specific extra courses
-     hs_removals  → {[weekKey]: {[studentId]: {[day]: [courseId,...]}}}
-                    default courses hidden on specific days
-     hs_weeks     → {[weekKey]: {[studentId]: {[day]: {[courseId]: bool}}}}
-                    checkbox state (works for both default & override courses)
-     hs_archive   → [{weekKey, label, snapshot, closedAt}]
+   app.js — Admin Tracker (Supabase version)
+   Reads/writes to Supabase. No localStorage.
    ───────────────────────────────────────────────────────────── */
 
-const DAYS     = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
-const PALETTE  = ['#fde8c8','#d8edf8','#d8f0e4','#ede0f8','#fde0e0','#e0f4f8'];
-const PALETTE_H= ['#e8a040','#4a90d9','#3aaa60','#8a50d0','#d06060','#30a0b8'];
-const STORAGE  = {
-  STUDENTS : 'hs_students',
-  OVERRIDES: 'hs_overrides',
-  REMOVALS : 'hs_removals',
-  WEEKS    : 'hs_weeks',
-  ARCHIVE  : 'hs_archive',
-  HIDDEN   : 'hs_hidden',   // {weekKey: {studentId: [day,...]}}
-};
+import { supabase }                              from './supabase.js';
+import { requireAdmin, logout }                  from './auth.js';
+import { autoExportOnCloseWeek, checkPeriodicExport } from './export.js';
 
-let state = {
-  students : [],
-  overrides: {},
-  removals : {},
-  hidden   : {},
-  weeks    : {},
-  archive  : [],
-  currentWeekKey: '',
-  editingStudentId: null,
-};
+/* ── CONSTANTS ─────────────────────────────────────────────── */
+const DAYS      = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
+const PALETTE   = ['#fde8c8','#d8edf8','#d8f0e4','#ede0f8','#fde0e0','#e0f4f8'];
+const PALETTE_H = ['#e8a040','#4a90d9','#3aaa60','#8a50d0','#d06060','#30a0b8'];
 
-/* ── STORAGE ─────────────────────────────────────────────── */
-function save() {
-  localStorage.setItem(STORAGE.STUDENTS,  JSON.stringify(state.students));
-  localStorage.setItem(STORAGE.OVERRIDES, JSON.stringify(state.overrides));
-  localStorage.setItem(STORAGE.REMOVALS,  JSON.stringify(state.removals));
-  localStorage.setItem(STORAGE.HIDDEN,    JSON.stringify(state.hidden));
-  localStorage.setItem(STORAGE.WEEKS,     JSON.stringify(state.weeks));
-  localStorage.setItem(STORAGE.ARCHIVE,   JSON.stringify(state.archive));
-}
+/* ── STATE ─────────────────────────────────────────────────── */
+let adminProfile = null;
+let students     = [];   // [{id, name, color_index}]
+let instances    = [];   // all week_instance rows for current week
+let hiddenCards  = {};   // studentId → [day,...]
+let weekKey      = '';
 
-function load() {
-  state.students  = JSON.parse(localStorage.getItem(STORAGE.STUDENTS)  || '[]');
-  state.overrides = JSON.parse(localStorage.getItem(STORAGE.OVERRIDES) || '{}');
-  state.removals  = JSON.parse(localStorage.getItem(STORAGE.REMOVALS)  || '{}');
-  state.hidden    = JSON.parse(localStorage.getItem(STORAGE.HIDDEN)    || '{}');
-  state.weeks     = JSON.parse(localStorage.getItem(STORAGE.WEEKS)     || '{}');
-  state.archive   = JSON.parse(localStorage.getItem(STORAGE.ARCHIVE)   || '[]');
-}
-
-/* ── WEEK KEY ────────────────────────────────────────────── */
+/* ── WEEK KEY ───────────────────────────────────────────────── */
 function getWeekKey(date = new Date()) {
   const d = new Date(date);
-  const day = d.getDay(); // 0=Sun … 6=Sat
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // roll back to Monday
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   d.setDate(diff);
-  // Use local year/month/date — never toISOString() which shifts to UTC
   const y  = d.getFullYear();
   const m  = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
@@ -83,61 +47,365 @@ function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2,6);
 }
 
-/* ── COURSE RESOLUTION ───────────────────────────────────── */
-function getCoursesForDay(wk, studentId, day) {
-  const student = state.students.find(s => s.id === studentId);
-  if (!student) return [];
-  const removed  = state.removals?.[wk]?.[studentId]?.[day] || [];
-  const defaults = (student.courses || [])
-    .filter(c => !removed.includes(c.id))
-    .map(c => ({ ...c, isOverride: false }));
-  const extras = (state.overrides?.[wk]?.[studentId]?.[day] || [])
-    .map(c => ({ ...c, isOverride: true }));
-  return [...defaults, ...extras];
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-/* ── CHECK STATE ─────────────────────────────────────────── */
-function getCourseCheck(wk, studentId, day, courseId) {
-  return !!(state.weeks?.[wk]?.[studentId]?.[day]?.[courseId]);
+/* ── LOAD DATA ──────────────────────────────────────────────── */
+async function loadStudents() {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('role', 'student')
+    .order('name');
+  if (error) { console.error('loadStudents:', error); return; }
+  students = data || [];
 }
 
-function setCourseCheck(wk, studentId, day, courseId, val) {
-  if (!state.weeks[wk]) state.weeks[wk] = {};
-  if (!state.weeks[wk][studentId]) state.weeks[wk][studentId] = {};
-  if (!state.weeks[wk][studentId][day]) state.weeks[wk][studentId][day] = {};
-  state.weeks[wk][studentId][day][courseId] = val;
-  save();
+async function loadInstances() {
+  if (students.length === 0) return;
+  const { data, error } = await supabase
+    .from('week_instances')
+    .select('*')
+    .eq('week_key', weekKey)
+    .in('student_id', students.map(s => s.id));
+  if (error) { console.error('loadInstances:', error); return; }
+  instances = data || [];
 }
 
-/* ── SUMMARY STRIP ───────────────────────────────────────── */
+async function loadHiddenCards() {
+  if (students.length === 0) return;
+  const { data, error } = await supabase
+    .from('week_cards')
+    .select('*')
+    .eq('week_key', weekKey)
+    .eq('hidden', true)
+    .in('student_id', students.map(s => s.id));
+  if (error) { console.error('loadHiddenCards:', error); return; }
+
+  hiddenCards = {};
+  students.forEach(s => { hiddenCards[s.id] = []; });
+  (data || []).forEach(row => {
+    if (hiddenCards[row.student_id]) hiddenCards[row.student_id].push(row.day);
+  });
+}
+
+/* ── INSTANCE HELPERS ───────────────────────────────────────── */
+function instancesForStudentDay(studentId, day) {
+  return instances.filter(i =>
+    i.student_id === studentId &&
+    i.day === day &&
+    !i.hidden
+  );
+}
+
+function isCardHidden(studentId, day) {
+  return (hiddenCards[studentId] || []).includes(day);
+}
+
+/* ── RENDER GRID ────────────────────────────────────────────── */
+function renderGrid() {
+  const grid = document.getElementById('week-grid');
+  grid.innerHTML = '';
+
+  DAYS.forEach((day, di) => {
+    const col = document.createElement('div');
+    col.className = 'day-column';
+
+    const hdr = document.createElement('div');
+    hdr.className = 'day-header' + (isDayToday(di) ? ' today' : '');
+    hdr.textContent = day;
+    col.appendChild(hdr);
+
+    const cards = document.createElement('div');
+    cards.className = 'day-cards';
+
+    students.forEach(student => {
+      if (isCardHidden(student.id, day)) {
+        cards.appendChild(buildHiddenPlaceholder(student, day));
+      } else {
+        cards.appendChild(buildCard(student, day));
+      }
+    });
+
+    col.appendChild(cards);
+    grid.appendChild(col);
+  });
+
+  renderSummaryStrip();
+}
+
+/* ── BUILD CARD ─────────────────────────────────────────────── */
+function buildCard(student, day) {
+  const dayInstances = instancesForStudentDay(student.id, day);
+  const bg      = PALETTE[student.color_index % PALETTE.length];
+  const accent  = PALETTE_H[student.color_index % PALETTE_H.length];
+  const initials= student.name.trim().split(/\s+/).map(w=>w[0]).join('').toUpperCase().slice(0,2);
+
+  const card = document.createElement('div');
+  card.className = 'student-card';
+  card.dataset.studentId = student.id;
+  card.dataset.day = day;
+
+  /* header */
+  const hdr = document.createElement('div');
+  hdr.className = 'card-header';
+  hdr.style.background = bg;
+  hdr.innerHTML = `
+    <div class="card-header-left">
+      <div class="card-avatar" style="color:${accent}">${initials}</div>
+      <span class="card-name" style="color:${accent}">${escHtml(student.name)}</span>
+    </div>
+    <div class="card-actions">
+      <button class="btn-icon" title="More options" data-action="more">•••</button>
+    </div>
+  `;
+
+  hdr.querySelector('[data-action="more"]').addEventListener('click', e => {
+    e.stopPropagation();
+    openCardMenu(e.currentTarget, student, day);
+  });
+
+  card.appendChild(hdr);
+
+  /* body */
+  const body = document.createElement('div');
+  body.className = 'card-body';
+
+  if (dayInstances.length === 0) {
+    body.innerHTML = `<div class="card-empty">No courses assigned.<br><small>Use <strong>📅 Plan Week</strong> to assign courses.</small></div>`;
+  } else {
+    dayInstances.forEach(inst => {
+      body.appendChild(buildCourseItem(card, student, day, inst));
+    });
+  }
+
+  card.appendChild(body);
+
+  /* progress bar */
+  if (dayInstances.length > 0) {
+    card.appendChild(buildProgressBar(dayInstances));
+  }
+
+  return card;
+}
+
+/* ── COURSE ITEM ────────────────────────────────────────────── */
+function buildCourseItem(card, student, day, inst) {
+  const item = document.createElement('div');
+  item.className = 'course-item' + (inst.completed ? ' done' : '');
+
+  const cbId = `cb-${inst.id}`;
+  item.innerHTML = `
+    <label for="${cbId}">
+      <input type="checkbox" id="${cbId}" ${inst.completed ? 'checked' : ''}>
+      <span class="course-label">${escHtml(inst.label)}</span>
+    </label>
+  `;
+
+  item.querySelector('input').addEventListener('change', async ev => {
+    const val = ev.target.checked;
+    item.classList.toggle('done', val);
+    inst.completed = val;
+
+    const { error } = await supabase
+      .from('week_instances')
+      .update({ completed: val })
+      .eq('id', inst.id);
+
+    if (error) {
+      console.error('update error:', error);
+      ev.target.checked = !val;
+      item.classList.toggle('done', !val);
+      inst.completed = !val;
+      toast('Failed to save — try again');
+      return;
+    }
+
+    const prog = card.querySelector('.card-progress');
+    if (prog) refreshProgressBar(prog, instancesForStudentDay(student.id, day));
+    updateSummaryStudent(student.id);
+  });
+
+  return item;
+}
+
+/* ── PROGRESS BAR ───────────────────────────────────────────── */
+function buildProgressBar(dayInstances) {
+  const total = dayInstances.length;
+  const done  = dayInstances.filter(i => i.completed).length;
+  const pct   = total === 0 ? 0 : Math.round((done / total) * 100);
+  const prog  = document.createElement('div');
+  prog.className = 'card-progress';
+  prog.innerHTML = `
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" style="width:${pct}%"></div>
+    </div>
+    <span class="progress-label">${done}/${total}</span>
+  `;
+  return prog;
+}
+
+function refreshProgressBar(progEl, dayInstances) {
+  const total = dayInstances.length;
+  const done  = dayInstances.filter(i => i.completed).length;
+  const pct   = total === 0 ? 0 : Math.round((done / total) * 100);
+  const fill  = progEl.querySelector('.progress-bar-fill');
+  const lbl   = progEl.querySelector('.progress-label');
+  if (fill) fill.style.width = pct + '%';
+  if (lbl)  lbl.textContent  = `${done}/${total}`;
+}
+
+/* ── HIDDEN CARD PLACEHOLDER ────────────────────────────────── */
+function buildHiddenPlaceholder(student, day) {
+  const bg     = PALETTE[student.color_index % PALETTE.length];
+  const accent = PALETTE_H[student.color_index % PALETTE_H.length];
+  const initials = student.name.trim().split(/\s+/).map(w=>w[0]).join('').toUpperCase().slice(0,2);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'student-card card-hidden-day';
+
+  wrap.innerHTML = `
+    <div class="card-header card-header-muted" style="background:${bg}88">
+      <div class="card-header-left">
+        <div class="card-avatar" style="color:${accent}88">${initials}</div>
+        <span class="card-name" style="color:${accent}88">${escHtml(student.name)}</span>
+      </div>
+      <button class="btn-icon card-restore-btn" title="Restore card for this day">↩</button>
+    </div>
+    <div class="card-body card-hidden-msg">No school this day</div>
+  `;
+
+  wrap.querySelector('.card-restore-btn').addEventListener('click', async () => {
+    const { error } = await supabase
+      .from('week_cards')
+      .update({ hidden: false })
+      .eq('week_key', weekKey)
+      .eq('student_id', student.id)
+      .eq('day', day);
+
+    if (error) { toast('Failed to restore card'); return; }
+
+    hiddenCards[student.id] = (hiddenCards[student.id] || []).filter(d => d !== day);
+    const parent = wrap.parentNode;
+    parent.replaceChild(buildCard(student, day), wrap);
+    renderSummaryStrip();
+  });
+
+  return wrap;
+}
+
+/* ── CARD CONTEXT MENU ──────────────────────────────────────── */
+function openCardMenu(btn, student, day) {
+  closeAllDropdowns();
+
+  const menu = document.createElement('div');
+  menu.className = 'dropdown-menu dropdown-menu-portal';
+  menu.innerHTML = `
+    <button class="dropdown-item" data-action="hide-day">🚫  Hide card this day</button>
+    <button class="dropdown-item" data-action="edit-name">✏️  Rename Student</button>
+    <button class="dropdown-item danger" data-action="delete">🗑  Remove Student</button>
+  `;
+
+  const rect = btn.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.top  = (rect.bottom + 4) + 'px';
+  menu.style.right = (window.innerWidth - rect.right) + 'px';
+  document.body.appendChild(menu);
+
+  menu.querySelector('[data-action="hide-day"]').addEventListener('click', async () => {
+    closeAllDropdowns();
+
+    // Upsert week_cards hidden row
+    const { error } = await supabase
+      .from('week_cards')
+      .upsert({
+        week_key   : weekKey,
+        student_id : student.id,
+        day,
+        hidden     : true,
+      }, { onConflict: 'week_key,student_id,day' });
+
+    if (error) { toast('Failed to hide card'); console.error(error); return; }
+
+    if (!hiddenCards[student.id]) hiddenCards[student.id] = [];
+    if (!hiddenCards[student.id].includes(day)) hiddenCards[student.id].push(day);
+
+    renderGrid();
+    toast(`${student.name} hidden on ${day}`);
+  });
+
+  menu.querySelector('[data-action="edit-name"]').addEventListener('click', () => {
+    closeAllDropdowns();
+    editStudentName(student);
+  });
+
+  menu.querySelector('[data-action="delete"]').addEventListener('click', async () => {
+    closeAllDropdowns();
+    if (!confirm(`Remove "${student.name}" from the tracker? This cannot be undone.`)) return;
+
+    const { error } = await supabase
+      .from('profiles')
+      .delete()
+      .eq('id', student.id);
+
+    if (error) { toast('Failed to remove student'); return; }
+
+    students = students.filter(s => s.id !== student.id);
+    renderGrid();
+    renderStudentList();
+    toast(`${student.name} removed`);
+  });
+
+  setTimeout(() => document.addEventListener('click', closeAllDropdowns, { once: true }), 0);
+}
+
+function closeAllDropdowns() {
+  document.querySelectorAll('.dropdown-menu').forEach(m => m.remove());
+}
+
+async function editStudentName(student) {
+  const name = prompt('Student name:', student.name);
+  if (!name || !name.trim()) return;
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ name: name.trim() })
+    .eq('id', student.id);
+
+  if (error) { toast('Failed to update name'); return; }
+
+  student.name = name.trim();
+  renderGrid();
+  renderStudentList();
+}
+
+/* ── SUMMARY STRIP ──────────────────────────────────────────── */
 function renderSummaryStrip() {
   const strip = document.getElementById('summary-strip');
   if (!strip) return;
   strip.innerHTML = '';
-  if (state.students.length === 0) return;
+  if (students.length === 0) return;
 
-  const wk   = state.currentWeekKey;
   const card = document.createElement('div');
   card.className = 'summary-card';
 
-  state.students.forEach(student => {
-    let total = 0, done = 0;
-    DAYS.forEach(day => {
-      const isHidden = (state.hidden?.[wk]?.[student.id] || []).includes(day);
-      if (isHidden) return;
-      const courses = getCoursesForDay(wk, student.id, day);
-      courses.forEach(course => {
-        total++;
-        if (getCourseCheck(wk, student.id, day, course.id)) done++;
-      });
-    });
+  students.forEach(student => {
+    const studentInstances = instances.filter(i =>
+      i.student_id === student.id && !i.hidden &&
+      !(hiddenCards[student.id] || []).includes(i.day)
+    );
+    const total = studentInstances.length;
+    const done  = studentInstances.filter(i => i.completed).length;
+    const pct   = total === 0 ? 0 : Math.round((done / total) * 100);
 
-    const pct      = total === 0 ? 0 : Math.round((done / total) * 100);
-    const bg       = PALETTE[student.colorIndex % PALETTE.length];
-    const accent   = PALETTE_H[student.colorIndex % PALETTE_H.length];
-    const initials = student.name.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 2);
-    const fillClass= pct >= 80 ? '' : pct >= 40 ? 'warn' : 'low';
-    const pctColor = pct >= 80 ? 'var(--success)' : pct >= 40 ? 'var(--warn)' : 'var(--danger)';
+    const bg      = PALETTE[student.color_index % PALETTE.length];
+    const accent  = PALETTE_H[student.color_index % PALETTE_H.length];
+    const initials= student.name.trim().split(/\s+/).map(w=>w[0]).join('').toUpperCase().slice(0,2);
+    const fillClass = pct >= 80 ? '' : pct >= 40 ? 'warn' : 'low';
+    const pctColor  = pct >= 80 ? 'var(--success)' : pct >= 40 ? 'var(--warn)' : 'var(--danger)';
 
     const el = document.createElement('div');
     el.className = 'summary-student';
@@ -160,578 +428,149 @@ function renderSummaryStrip() {
 function updateSummaryStudent(studentId) {
   const strip = document.getElementById('summary-strip');
   if (!strip) return;
-  const wk      = state.currentWeekKey;
-  const student = state.students.find(s => s.id === studentId);
+
+  const student = students.find(s => s.id === studentId);
   if (!student) return;
 
-  let total = 0, done = 0;
-  DAYS.forEach(day => {
-    const isHidden = (state.hidden?.[wk]?.[student.id] || []).includes(day);
-    if (isHidden) return;
-    const courses = getCoursesForDay(wk, student.id, day);
-    courses.forEach(course => {
-      total++;
-      if (getCourseCheck(wk, student.id, day, course.id)) done++;
-    });
-  });
+  const studentInstances = instances.filter(i =>
+    i.student_id === studentId && !i.hidden &&
+    !(hiddenCards[studentId] || []).includes(i.day)
+  );
+  const total = studentInstances.length;
+  const done  = studentInstances.filter(i => i.completed).length;
+  const pct   = total === 0 ? 0 : Math.round((done / total) * 100);
 
-  const pct      = total === 0 ? 0 : Math.round((done / total) * 100);
-  const fillClass= pct >= 80 ? '' : pct >= 40 ? 'warn' : 'low';
-  const pctColor = pct >= 80 ? 'var(--success)' : pct >= 40 ? 'var(--warn)' : 'var(--danger)';
+  const fillClass = pct >= 80 ? '' : pct >= 40 ? 'warn' : 'low';
+  const pctColor  = pct >= 80 ? 'var(--success)' : pct >= 40 ? 'var(--warn)' : 'var(--danger)';
 
   const el = strip.querySelector(`.summary-card [data-student-id="${studentId}"]`);
   if (!el) return;
-  const fill     = el.querySelector('.summary-bar-fill');
-  const fraction = el.querySelector('.summary-fraction');
-  const pctEl    = el.querySelector('.summary-pct');
 
-  if (fill)     { fill.style.width = pct + '%'; fill.className = `summary-bar-fill ${fillClass}`; }
-  if (fraction) fraction.textContent = `${done}/${total}`;
-  if (pctEl)    { pctEl.textContent = pct + '%'; pctEl.style.color = pctColor; }
+  const fill = el.querySelector('.summary-bar-fill');
+  const frac = el.querySelector('.summary-fraction');
+  const pctEl = el.querySelector('.summary-pct');
+
+  if (fill)  { fill.style.width = pct + '%'; fill.className = `summary-bar-fill ${fillClass}`; }
+  if (frac)  frac.textContent = `${done}/${total}`;
+  if (pctEl) { pctEl.textContent = pct + '%'; pctEl.style.color = pctColor; }
 }
 
-/* ── RENDER GRID ─────────────────────────────────────────── */
-function renderGrid() {
-  const grid = document.getElementById('week-grid');
-  grid.innerHTML = '';
-
-  DAYS.forEach((day, di) => {
-    const col = document.createElement('div');
-    col.className = 'day-column';
-
-    const hdr = document.createElement('div');
-    hdr.className = 'day-header' + (isDayToday(di) ? ' today' : '');
-    hdr.textContent = day;
-    col.appendChild(hdr);
-
-    const cards = document.createElement('div');
-    cards.className = 'day-cards';
-
-    state.students.forEach(student => {
-      const isHidden = (state.hidden?.[state.currentWeekKey]?.[student.id] || []).includes(day);
-      if (isHidden) {
-        cards.appendChild(buildHiddenPlaceholder(student, day));
-      } else {
-        cards.appendChild(buildCard(student, day));
-      }
-    });
-
-    const addBtn = document.createElement('button');
-    addBtn.className = 'btn-add-card';
-    addBtn.innerHTML = `<span>+</span> Add Student`;
-    addBtn.addEventListener('click', () => openManageStudents());
-    cards.appendChild(addBtn);
-
-    col.appendChild(cards);
-    grid.appendChild(col);
-  });
-
-  renderSummaryStrip();
-}
-
-/* ── BUILD CARD ──────────────────────────────────────────── */
-function buildCard(student, day) {
-  const wk      = state.currentWeekKey;
-  const courses = getCoursesForDay(wk, student.id, day);
-  const bg      = PALETTE[student.colorIndex % PALETTE.length];
-  const accent  = PALETTE_H[student.colorIndex % PALETTE_H.length];
-  const initials= student.name.trim().split(/\s+/).map(w=>w[0]).join('').toUpperCase().slice(0,2);
-
-  const card = document.createElement('div');
-  card.className = 'student-card';
-  card.dataset.studentId = student.id;
-  card.dataset.day = day;
-
-  /* — header — */
-  const hdr = document.createElement('div');
-  hdr.className = 'card-header';
-  hdr.style.background = bg;
-  hdr.innerHTML = `
-    <div class="card-header-left">
-      <div class="card-avatar" style="color:${accent}">${initials}</div>
-      <span class="card-name" style="color:${accent}">${escHtml(student.name)}</span>
-    </div>
-    <div class="card-actions">
-      <button class="btn-icon" title="More options" data-action="more">•••</button>
-    </div>
-  `;
-
-  hdr.querySelector('[data-action="more"]').addEventListener('click', e => {
-    e.stopPropagation();
-    openCardMenu(e.currentTarget, student, day);
-  });
-
-  card.appendChild(hdr);
-
-  /* — body — */
-  const body = document.createElement('div');
-  body.className = 'card-body';
-
-  if (courses.length === 0) {
-    body.innerHTML = `<div class="card-empty">No courses for this day.<br><small>Use <strong>•••</strong> to add or edit courses.</small></div>`;
-  } else {
-    courses.forEach(course => {
-      body.appendChild(buildCourseItem(card, student, day, course));
-    });
-  }
-
-  card.appendChild(body);
-
-  /* — progress bar — */
-  if (courses.length > 0) {
-    card.appendChild(buildProgressBar(student, day, courses));
-  }
-
-  return card;
-}
-
-
-/* ── HIDDEN CARD PLACEHOLDER ─────────────────────────────── */
-function buildHiddenPlaceholder(student, day) {
-  const bg     = PALETTE[student.colorIndex % PALETTE.length];
-  const accent = PALETTE_H[student.colorIndex % PALETTE_H.length];
-  const initials = student.name.trim().split(/\s+/).map(w=>w[0]).join('').toUpperCase().slice(0,2);
-
-  const wrap = document.createElement('div');
-  wrap.className = 'student-card card-hidden-day';
-
-  wrap.innerHTML = `
-    <div class="card-header card-header-muted" style="background:${bg}88">
-      <div class="card-header-left">
-        <div class="card-avatar" style="color:${accent}88">${initials}</div>
-        <span class="card-name" style="color:${accent}88">${escHtml(student.name)}</span>
-      </div>
-      <button class="btn-icon card-restore-btn" title="Restore card for this day">↩</button>
-    </div>
-    <div class="card-body card-hidden-msg">No school this day</div>
-  `;
-
-  wrap.querySelector('.card-restore-btn').addEventListener('click', () => {
-    const wk = state.currentWeekKey;
-    if (state.hidden?.[wk]?.[student.id]) {
-      state.hidden[wk][student.id] = state.hidden[wk][student.id].filter(d => d !== day);
-    }
-    save();
-    const parent = wrap.parentNode;
-    parent.replaceChild(buildCard(student, day), wrap);
-  });
-
-  return wrap;
-}
-
-function buildCourseItem(card, student, day, course) {
-  const wk      = state.currentWeekKey;
-  const checked = getCourseCheck(wk, student.id, day, course.id);
-  const item    = document.createElement('div');
-  item.className = 'course-item' + (checked ? ' done' : '') + (course.isOverride ? ' override' : '');
-
-  const cbId = `cb-${student.id}-${day}-${course.id}`;
-  item.innerHTML = `
-    <label for="${cbId}">
-      <input type="checkbox" id="${cbId}" ${checked ? 'checked' : ''}>
-      <span class="course-label">${escHtml(course.label)}</span>
-    </label>
-    <button class="btn-icon course-remove" title="${course.isOverride ? 'Remove from this day' : 'Hide on this day'}" data-action="remove-course">✕</button>
-  `;
-
-  item.querySelector('input').addEventListener('change', ev => {
-    setCourseCheck(wk, student.id, day, course.id, ev.target.checked);
-    item.classList.toggle('done', ev.target.checked);
-    const prog = card.querySelector('.card-progress');
-    if (prog) refreshProgressBar(prog, student, day, getCoursesForDay(wk, student.id, day));
-    updateSummaryStudent(student.id);
-  });
-
-  item.querySelector('[data-action="remove-course"]').addEventListener('click', () => {
-    if (course.isOverride) {
-      const arr = state.overrides?.[wk]?.[student.id]?.[day];
-      if (arr) state.overrides[wk][student.id][day] = arr.filter(c => c.id !== course.id);
-    } else {
-      if (!state.removals[wk]) state.removals[wk] = {};
-      if (!state.removals[wk][student.id]) state.removals[wk][student.id] = {};
-      if (!state.removals[wk][student.id][day]) state.removals[wk][student.id][day] = [];
-      if (!state.removals[wk][student.id][day].includes(course.id)) {
-        state.removals[wk][student.id][day].push(course.id);
-      }
-    }
-    save();
-    const parent = card.parentNode;
-    parent.replaceChild(buildCard(student, day), card);
-  });
-
-  return item;
-}
-
-function buildProgressBar(student, day, courses) {
-  const wk    = state.currentWeekKey;
-  const total = courses.length;
-  const done  = courses.filter(c => getCourseCheck(wk, student.id, day, c.id)).length;
-  const pct   = Math.round((done / total) * 100);
-  const prog  = document.createElement('div');
-  prog.className = 'card-progress';
-  prog.innerHTML = `
-    <div class="progress-bar-bg">
-      <div class="progress-bar-fill" style="width:${pct}%"></div>
-    </div>
-    <span class="progress-label">${done}/${total}</span>
-  `;
-  return prog;
-}
-
-function refreshProgressBar(progEl, student, day, courses) {
-  const wk    = state.currentWeekKey;
-  const total = courses.length;
-  const done  = courses.filter(c => getCourseCheck(wk, student.id, day, c.id)).length;
-  const pct   = Math.round((done / total) * 100);
-  const fill  = progEl.querySelector('.progress-bar-fill');
-  const lbl   = progEl.querySelector('.progress-label');
-  if (fill) fill.style.width = pct + '%';
-  if (lbl)  lbl.textContent  = `${done}/${total}`;
-}
-
-/* ── ADD COURSE MODAL ────────────────────────────────────── */
-let _dayCourseCtx = { studentId: null, originDay: null };
-
-function openAddDayCourseModal(studentId, originDay) {
-  _dayCourseCtx = { studentId, originDay };
-  const originDi = DAYS.indexOf(originDay);
-
-  // Populate student checkboxes
-  const studentPickers = document.getElementById('dc-student-pickers');
-  studentPickers.innerHTML = '';
-  state.students.forEach(s => {
-    const cbId = `dc-stu-${s.id}`;
-    const label = document.createElement('label');
-    label.className = 'day-pill';
-    label.setAttribute('for', cbId);
-    const isChecked = s.id === studentId;
-    label.innerHTML = `<input type="checkbox" id="${cbId}" data-student-id="${s.id}" ${isChecked ? 'checked' : ''}><span>${escHtml(s.name)}</span>`;
-    studentPickers.appendChild(label);
-  });
-
-  document.getElementById('day-course-input').value = '';
-
-  // Reset scope toggle to "specific days"
-  document.getElementById('dc-scope-all').classList.remove('active');
-  document.getElementById('dc-scope-days').classList.add('active');
-  document.getElementById('dc-day-picker-section').style.display = '';
-
-  // Pre-check origin day + days after
-  DAYS.forEach((_, i) => {
-    const cb = document.getElementById(`dc-day-${i}`);
-    if (cb) cb.checked = (i >= originDi);
-  });
-
-  showModal('modal-day-course');
-  setTimeout(() => document.getElementById('day-course-input').focus(), 60);
-}
-
-// Scope toggle
-document.getElementById('dc-scope-all').addEventListener('click', () => {
-  document.getElementById('dc-scope-all').classList.add('active');
-  document.getElementById('dc-scope-days').classList.remove('active');
-  document.getElementById('dc-day-picker-section').style.display = 'none';
-});
-
-document.getElementById('dc-scope-days').addEventListener('click', () => {
-  document.getElementById('dc-scope-days').classList.add('active');
-  document.getElementById('dc-scope-all').classList.remove('active');
-  document.getElementById('dc-day-picker-section').style.display = '';
-});
-
-document.getElementById('btn-save-day-course').addEventListener('click', saveDayCourse);
-document.getElementById('day-course-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter') saveDayCourse();
-});
-
-document.getElementById('dc-just-this').addEventListener('click', () => {
-  const originDi = DAYS.indexOf(_dayCourseCtx.originDay);
-  DAYS.forEach((_, i) => {
-    const cb = document.getElementById(`dc-day-${i}`);
-    if (cb) cb.checked = (i === originDi);
-  });
-});
-
-document.getElementById('dc-all').addEventListener('click', () => {
-  DAYS.forEach((_, i) => {
-    const cb = document.getElementById(`dc-day-${i}`);
-    if (cb) cb.checked = true;
-  });
-});
-
-function saveDayCourse() {
-  const label = document.getElementById('day-course-input').value.trim();
-  if (!label) { document.getElementById('day-course-input').focus(); return; }
-
-  // Which students?
-  const selectedStudentIds = [...document.querySelectorAll('#dc-student-pickers input:checked')]
-    .map(cb => cb.dataset.studentId);
-  if (selectedStudentIds.length === 0) { toast('Select at least one student.'); return; }
-
-  const isAllWeek = document.getElementById('dc-scope-all').classList.contains('active');
-
-  if (isAllWeek) {
-    // Save as true default course on the student object
-    selectedStudentIds.forEach(studentId => {
-      const student = state.students.find(s => s.id === studentId);
-      if (!student) return;
-      if (!student.courses) student.courses = [];
-      const already = student.courses.some(c => c.label.toLowerCase() === label.toLowerCase());
-      if (!already) {
-        student.courses.push({ id: uid(), label });
-      }
-    });
-    save();
-    closeModal('modal-day-course');
-    renderGrid();
-    toast(`"${label}" added as default for ${selectedStudentIds.length} student${selectedStudentIds.length > 1 ? 's' : ''}`);
-    return;
-  }
-
-  // Specific days — save as override
-  const selectedDays = DAYS.filter((_, i) => {
-    const cb = document.getElementById(`dc-day-${i}`);
-    return cb && cb.checked;
-  });
-  if (selectedDays.length === 0) { toast('Pick at least one day.'); return; }
-
-  const wk     = state.currentWeekKey;
-  const baseId = uid();
-
-  selectedStudentIds.forEach(studentId => {
-    if (!state.overrides[wk]) state.overrides[wk] = {};
-    if (!state.overrides[wk][studentId]) state.overrides[wk][studentId] = {};
-    selectedDays.forEach(day => {
-      if (!state.overrides[wk][studentId][day]) state.overrides[wk][studentId][day] = [];
-      const already = state.overrides[wk][studentId][day].some(
-        c => c.label.toLowerCase() === label.toLowerCase()
-      );
-      if (!already) {
-        state.overrides[wk][studentId][day].push({ id: `${baseId}_${studentId}_${day}`, label });
-      }
-    });
-  });
-
-  save();
-  closeModal('modal-day-course');
-  renderGrid();
-  const dayCount = selectedDays.length;
-  toast(`"${label}" added to ${selectedStudentIds.length} student${selectedStudentIds.length > 1 ? 's' : ''}, ${dayCount} day${dayCount > 1 ? 's' : ''}`);
-}
-
-/* ── CARD CONTEXT MENU ───────────────────────────────────── */
-function openCardMenu(btn, student, day) {
-  closeAllDropdowns();
-
-  const menu = document.createElement('div');
-  menu.className = 'dropdown-menu dropdown-menu-portal';
-  menu.innerHTML = `
-    <button class="dropdown-item" data-action="add-day">＋  Add Course…</button>
-    <button class="dropdown-item" data-action="edit-defaults">📚  Edit Default Courses</button>
-    <button class="dropdown-item" data-action="edit-name">✏️  Rename Student</button>
-    <button class="dropdown-item" data-action="hide-day">🚫  Hide card this day</button>
-    <button class="dropdown-item danger" data-action="delete">🗑  Remove Student</button>
-  `;
-
-  // Position relative to button
-  const rect = btn.getBoundingClientRect();
-  menu.style.position = 'fixed';
-  menu.style.top  = (rect.bottom + 4) + 'px';
-  menu.style.right = (window.innerWidth - rect.right) + 'px';
-  document.body.appendChild(menu);
-
-  menu.querySelector('[data-action="add-day"]').addEventListener('click', () => {
-    closeAllDropdowns(); openAddDayCourseModal(student.id, day);
-  });
-  menu.querySelector('[data-action="edit-defaults"]').addEventListener('click', () => {
-    closeAllDropdowns(); openCoursesModal(student.id);
-  });
-  menu.querySelector('[data-action="edit-name"]').addEventListener('click', () => {
-    closeAllDropdowns(); editStudentName(student.id);
-  });
-  menu.querySelector('[data-action="hide-day"]').addEventListener('click', () => {
-    closeAllDropdowns();
-    const wk = state.currentWeekKey;
-    if (!state.hidden[wk]) state.hidden[wk] = {};
-    if (!state.hidden[wk][student.id]) state.hidden[wk][student.id] = [];
-    if (!state.hidden[wk][student.id].includes(day)) {
-      state.hidden[wk][student.id].push(day);
-    }
-    save(); renderGrid();
-    toast(`${student.name} hidden on ${day}`);
-  });
-  menu.querySelector('[data-action="delete"]').addEventListener('click', () => {
-    closeAllDropdowns();
-    if (confirm(`Remove "${student.name}" from the tracker?`)) {
-      state.students = state.students.filter(s => s.id !== student.id);
-      save(); renderGrid(); toast(`${student.name} removed`);
-    }
-  });
-
-  setTimeout(() => document.addEventListener('click', closeAllDropdowns, { once: true }), 0);
-}
-
-function closeAllDropdowns() {
-  document.querySelectorAll('.dropdown-menu').forEach(m => m.remove());
-}
-
-function editStudentName(id) {
-  const student = state.students.find(s => s.id === id);
-  if (!student) return;
-  const name = prompt('Student name:', student.name);
-  if (name && name.trim()) { student.name = name.trim(); save(); renderGrid(); }
-}
-
-/* ── MANAGE STUDENTS MODAL ───────────────────────────────── */
-document.getElementById('btn-manage').addEventListener('click', () => openManageStudents());
-
-function openManageStudents() {
+/* ── MANAGE STUDENTS MODAL ──────────────────────────────────── */
+document.getElementById('btn-manage').addEventListener('click', () => {
   renderStudentList();
   showModal('modal-students');
-}
+});
 
 function renderStudentList() {
   const list = document.getElementById('student-list-editor');
   list.innerHTML = '';
 
-  if (state.students.length === 0) {
-    list.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;text-align:center;padding:12px 0">No students yet. Add one below.</p>';
+  if (students.length === 0) {
+    list.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;text-align:center;padding:12px 0">No students yet.</p>';
     return;
   }
 
-  state.students.forEach(student => {
+  students.forEach(student => {
+    const color = PALETTE[student.color_index % PALETTE.length];
     const row = document.createElement('div');
     row.className = 'student-editor-row';
-    const color = PALETTE[student.colorIndex % PALETTE.length];
     row.innerHTML = `
       <div class="student-color-dot" style="background:${color}"></div>
       <input class="input-inline" value="${escHtml(student.name)}" placeholder="Student name">
-      <button class="btn btn-sm btn-ghost" data-action="courses">Default Courses</button>
       <button class="btn-icon" data-action="delete" title="Remove">🗑</button>
     `;
+
     const input = row.querySelector('input');
-    input.addEventListener('blur', () => {
-      if (input.value.trim()) { student.name = input.value.trim(); save(); renderGrid(); }
+    input.addEventListener('blur', async () => {
+      if (!input.value.trim() || input.value.trim() === student.name) return;
+      const { error } = await supabase
+        .from('profiles')
+        .update({ name: input.value.trim() })
+        .eq('id', student.id);
+      if (error) { toast('Failed to update name'); return; }
+      student.name = input.value.trim();
+      renderGrid();
     });
     input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); });
-    row.querySelector('[data-action="courses"]').addEventListener('click', () => {
-      closeModal('modal-students'); openCoursesModal(student.id);
+
+    row.querySelector('[data-action="delete"]').addEventListener('click', async () => {
+      if (!confirm(`Remove "${student.name}"? This cannot be undone.`)) return;
+      const { error } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', student.id);
+      if (error) { toast('Failed to remove student'); return; }
+      students = students.filter(s => s.id !== student.id);
+      renderGrid();
+      renderStudentList();
+      toast(`${student.name} removed`);
     });
-    row.querySelector('[data-action="delete"]').addEventListener('click', () => {
-      if (confirm(`Remove "${student.name}"?`)) {
-        state.students = state.students.filter(s => s.id !== student.id);
-        save(); renderGrid(); renderStudentList();
-        toast(`${student.name} removed`);
-      }
-    });
+
     list.appendChild(row);
   });
 }
 
-document.getElementById('btn-add-student').addEventListener('click', () => {
-  const name = prompt('New student name:');
-  if (!name || !name.trim()) return;
-  const usedColors = state.students.map(s => s.colorIndex);
-  let colorIndex = 0;
-  for (let i = 0; i < PALETTE.length; i++) {
-    if (!usedColors.includes(i)) { colorIndex = i; break; }
-  }
-  state.students.push({ id: uid(), name: name.trim(), colorIndex, courses: [] });
-  save(); renderGrid(); renderStudentList();
-  toast(`${name.trim()} added`);
-});
+/* ── CLOSE WEEK ─────────────────────────────────────────────── */
+document.getElementById('btn-close-week').addEventListener('click', async () => {
+  if (!confirm(`Archive the week of ${weekLabel(weekKey)}?`)) return;
 
-/* ── DEFAULT COURSES MODAL ───────────────────────────────── */
-function openCoursesModal(studentId) {
-  state.editingStudentId = studentId;
-  const student = state.students.find(s => s.id === studentId);
-  document.getElementById('courses-modal-title').textContent = `${student.name} — Default Courses`;
-  renderCourseList(student);
-  showModal('modal-courses');
-}
+  // Insert archive_week row
+  const { data: archiveWeek, error: awError } = await supabase
+    .from('archive_weeks')
+    .insert({
+      week_key  : weekKey,
+      label     : weekLabel(weekKey),
+      closed_by : adminProfile.id,
+    })
+    .select()
+    .single();
 
-function renderCourseList(student) {
-  const list = document.getElementById('course-list-editor');
-  list.innerHTML = '';
-
-  const note = document.createElement('p');
-  note.style.cssText = 'font-size:0.78rem;color:var(--text-muted);margin-bottom:12px;line-height:1.5';
-  note.textContent = 'Default courses appear on every day of the week. To hide or add a course on a specific day, use the ＋ button on any card.';
-  list.appendChild(note);
-
-  if (!student.courses || student.courses.length === 0) {
-    const empty = document.createElement('p');
-    empty.style.cssText = 'color:var(--text-muted);font-size:0.85rem;text-align:center;padding:12px 0';
-    empty.textContent = 'No default courses yet.';
-    list.appendChild(empty);
+  if (awError) {
+    if (awError.code === '23505') { toast('This week is already archived.'); return; }
+    toast('Failed to archive week');
+    console.error(awError);
     return;
   }
 
-  student.courses.forEach(course => {
-    const row = document.createElement('div');
-    row.className = 'course-editor-row';
-    row.innerHTML = `
-      <input class="input-inline" value="${escHtml(course.label)}" placeholder="Course name">
-      <button class="btn-icon" data-action="delete" title="Remove">🗑</button>
-    `;
-    const input = row.querySelector('input');
-    input.addEventListener('blur', () => {
-      if (input.value.trim()) { course.label = input.value.trim(); save(); renderGrid(); }
+  // Copy instances to archive_instances
+  if (instances.length > 0) {
+    const archiveRows = instances.map(inst => {
+      const student = students.find(s => s.id === inst.student_id);
+      return {
+        archive_week_id : archiveWeek.id,
+        student_id      : inst.student_id,
+        student_name    : student ? student.name : 'Unknown',
+        label           : inst.label,
+        day             : inst.day,
+        completed       : inst.completed,
+        hidden          : inst.hidden,
+      };
     });
-    input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); });
-    row.querySelector('[data-action="delete"]').addEventListener('click', () => {
-      student.courses = student.courses.filter(c => c.id !== course.id);
-      save(); renderGrid(); renderCourseList(student);
-    });
-    list.appendChild(row);
-  });
-}
 
-document.getElementById('btn-add-course').addEventListener('click', () => {
-  const student = state.students.find(s => s.id === state.editingStudentId);
-  if (!student) return;
-  const label = prompt('New default course name:');
-  if (!label || !label.trim()) return;
-  if (!student.courses) student.courses = [];
-  student.courses.push({ id: uid(), label: label.trim() });
-  save(); renderGrid(); renderCourseList(student);
-});
+    const { error: aiError } = await supabase
+      .from('archive_instances')
+      .insert(archiveRows);
 
-/* ── CLOSE WEEK / ARCHIVE ────────────────────────────────── */
-document.getElementById('btn-close-week').addEventListener('click', () => {
-  const wk = state.currentWeekKey;
-  if (state.archive.find(a => a.weekKey === wk)) { toast('This week is already archived.'); return; }
-  if (!confirm(`Archive the week of ${weekLabel(wk)}?`)) return;
+    if (aiError) { console.error('archive_instances insert:', aiError); }
+  }
 
-  const snapshot = {
-    students : JSON.parse(JSON.stringify(state.students)),
-    checks   : JSON.parse(JSON.stringify(state.weeks[wk]     || {})),
-    overrides: JSON.parse(JSON.stringify(state.overrides[wk] || {})),
-    removals : JSON.parse(JSON.stringify(state.removals[wk]  || {})),
-    hidden   : JSON.parse(JSON.stringify(state.hidden[wk]    || {})),
-  };
+  // Auto-export JSON backup
+  autoExportOnCloseWeek(weekLabel(weekKey));
 
-  state.archive.unshift({
-    weekKey: wk, label: weekLabel(wk), snapshot, closedAt: new Date().toISOString(),
-  });
-
-  state.weeks[wk]     = {};
-  state.overrides[wk] = {};
-  state.removals[wk]  = {};
-  state.hidden[wk]    = {};
-
-  const nextMon = new Date(wk + 'T00:00:00');
+  // Advance to next week
+  const nextMon = new Date(weekKey + 'T00:00:00');
   nextMon.setDate(nextMon.getDate() + 7);
-  state.currentWeekKey = getWeekKey(nextMon);
+  weekKey = getWeekKey(nextMon);
 
-  save(); updateWeekLabel(); renderGrid();
-  autoExportOnCloseWeek(weekLabel(wk));
+  // Reload
+  await loadInstances();
+  await loadHiddenCards();
+  updateWeekLabel();
+  renderGrid();
   toast('Week archived ✓ — backup downloaded');
 });
 
-/* ── ARCHIVE VIEW — see archive.html + archive.js ── */
-
-/* ── MODAL HELPERS ───────────────────────────────────────── */
+/* ── MODAL HELPERS ──────────────────────────────────────────── */
 function showModal(id) { document.getElementById(id).classList.remove('hidden'); }
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 
@@ -742,7 +581,7 @@ document.querySelectorAll('.modal-backdrop').forEach(bd => {
   bd.addEventListener('click', e => { if (e.target === bd) closeModal(bd.id); });
 });
 
-/* ── TOAST ───────────────────────────────────────────────── */
+/* ── TOAST ──────────────────────────────────────────────────── */
 let _toastTimer;
 function toast(msg) {
   const el = document.getElementById('toast');
@@ -752,23 +591,26 @@ function toast(msg) {
   _toastTimer = setTimeout(() => el.classList.add('hidden'), 2400);
 }
 
-/* ── UTILS ───────────────────────────────────────────────── */
-function escHtml(str) {
-  return String(str)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
+/* ── WEEK LABEL ─────────────────────────────────────────────── */
 function updateWeekLabel() {
-  document.getElementById('week-label').textContent = 'Week of ' + weekLabel(state.currentWeekKey);
+  document.getElementById('week-label').textContent = 'Week of ' + weekLabel(weekKey);
 }
 
-/* ── INIT ────────────────────────────────────────────────── */
-function init() {
-  load();
-  state.currentWeekKey = getWeekKey();
+/* ── INIT ───────────────────────────────────────────────────── */
+async function init() {
+  adminProfile = await requireAdmin();
+  if (!adminProfile) return;
+
+  weekKey = getWeekKey();
   updateWeekLabel();
+
+  await loadStudents();
+  await loadInstances();
+  await loadHiddenCards();
+
   renderGrid();
+
+  document.getElementById('btn-logout').addEventListener('click', logout);
   checkPeriodicExport();
 }
 

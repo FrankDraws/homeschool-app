@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan Week — Homeschool Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800&family=Nunito+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>
+  /* ── PLANNER-SPECIFIC STYLES ── */
+  .planner-main {
+    padding: 24px 28px 48px;
+    max-width: 1000px;
+    margin: 0 auto;
+  }
+
+  .planner-week-label {
+    font-family: var(--font-display);
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    margin-bottom: 24px;
+  }
+
+  /* ── STUDENT BLOCK ── */
+  .student-block {
+    background: var(--surface);
+    border: 1.5px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 28px;
+    overflow: hidden;
+  }
+
+  .student-block-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    gap: 12px;
+  }
+
+  .student-block-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .student-block-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+
+  .student-block-name {
+    font-family: var(--font-display);
+    font-size: 1rem;
+    font-weight: 800;
+  }
+
+  .btn-add-temp {
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1.5px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition);
+    white-space: nowrap;
+  }
+  .btn-add-temp:hover {
+    background: var(--accent-light);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* ── PLANNER GRID ── */
+  .planner-grid {
+    width: 100%;
+    border-collapse: collapse;
+    border-top: 1px solid var(--border-light);
+  }
+
+  .planner-grid th {
+    font-family: var(--font-display);
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    padding: 10px 16px;
+    text-align: center;
+    border-bottom: 1px solid var(--border-light);
+    background: var(--surface-2);
+  }
+
+  .planner-grid th.course-col {
+    text-align: left;
+    width: 200px;
+  }
+
+  .planner-grid th.today-col {
+    color: var(--accent);
+    background: var(--accent-light);
+  }
+
+  .planner-grid td {
+    padding: 0;
+    border-bottom: 1px solid var(--border-light);
+    vertical-align: middle;
+  }
+
+  .planner-grid tr:last-child td {
+    border-bottom: none;
+  }
+
+  .planner-grid tr:hover td {
+    background: var(--surface-2);
+  }
+
+  .course-cell {
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 160px;
+  }
+
+  .course-cell-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    flex: 1;
+  }
+
+  .course-cell-badge {
+    font-size: 0.62rem;
+    font-weight: 800;
+    font-family: var(--font-display);
+    padding: 2px 6px;
+    border-radius: 99px;
+    background: var(--warn-light);
+    color: var(--warn);
+    white-space: nowrap;
+  }
+
+  .btn-remove-course {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    opacity: 0;
+    transition: opacity var(--transition), color var(--transition);
+  }
+
+  .planner-grid tr:hover .btn-remove-course {
+    opacity: 1;
+  }
+
+  .btn-remove-course:hover { color: var(--danger); }
+
+  .day-cell {
+    text-align: center;
+    padding: 8px;
+  }
+
+  .day-cell.today-col {
+    background: rgba(74,144,217,0.04);
+  }
+
+  /* ── PLANNER CHECKBOX ── */
+  .planner-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    border: 2px solid var(--border);
+    background: var(--surface);
+    cursor: pointer;
+    position: relative;
+    transition: background var(--transition), border-color var(--transition);
+    display: block;
+    margin: 0 auto;
+  }
+
+  .planner-checkbox:hover {
+    border-color: var(--accent);
+  }
+
+  .planner-checkbox:checked {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .planner-checkbox:checked::after {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 1px;
+    width: 8px;
+    height: 11px;
+    border: 2.5px solid white;
+    border-top: none;
+    border-left: none;
+    transform: rotate(42deg);
+  }
+
+  /* Saving indicator */
+  .planner-checkbox.saving {
+    border-color: var(--warn);
+    background: var(--warn-light);
+  }
+
+  .planner-checkbox.saved {
+    background: var(--success);
+    border-color: var(--success);
+  }
+
+  /* ── EMPTY LIBRARY ── */
+  .library-empty {
+    padding: 20px;
+    text-align: center;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  /* ── TOAST SAVING ── */
+  .save-status {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-family: var(--font-display);
+    font-weight: 600;
+    margin-left: 8px;
+    transition: opacity var(--transition);
+  }
+
+  /* ── ADD TEMP MODAL CONTENT ── */
+  .temp-course-note {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+    line-height: 1.5;
+  }
+
+  /* ── LOADING ── */
+  .planner-loading {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+    font-size: 0.88rem;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- HEADER -->
+  <header class="app-header">
+    <div class="header-left">
+      <a href="index.html" class="btn btn-ghost" style="font-size:0.82rem;padding:6px 12px">‹ Tracker</a>
+      <div class="app-logo">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+          <rect width="28" height="28" rx="8" fill="var(--accent)"/>
+          <path d="M7 10h14M7 14h10M7 18h12" stroke="white" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="app-title">Plan Week</h1>
+        <p class="app-subtitle" id="week-label">Loading…</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <span class="save-status" id="save-status"></span>
+      <button class="btn btn-ghost" id="btn-logout">Sign Out</button>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <main class="planner-main">
+    <div id="planner-body">
+      <div class="planner-loading">Loading planner…</div>
+    </div>
+  </main>
+
+</div>
+
+<!-- MODAL: Add temporary course -->
+<div class="modal-backdrop hidden" id="modal-temp-course">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Add Course for <span id="temp-course-student-name"></span></h2>
+      <button class="modal-close" data-close="modal-temp-course">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="temp-course-note">
+        This adds a course to the library. You can then assign it to specific days in the planner.
+        Mark it as temporary if it's only needed for a limited time.
+      </p>
+      <p class="field-label">Course name</p>
+      <input class="input-inline" id="temp-course-input"
+        placeholder="e.g. Essay writing, Latin, Art…"
+        style="width:100%;margin-bottom:16px">
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.83rem;cursor:pointer">
+        <input type="checkbox" id="temp-course-flag" style="width:16px;height:16px">
+        Mark as temporary
+      </label>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" id="btn-save-temp-course">Add to Library</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast" class="toast hidden"></div>
+
+<script type="module">
+import { supabase }            from './supabase.js';
+import { requireAdmin, logout } from './auth.js';
+
+/* ── CONSTANTS ── */
+const DAYS      = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
+const PALETTE   = ['#fde8c8','#d8edf8','#d8f0e4','#ede0f8','#fde0e0','#e0f4f8'];
+const PALETTE_H = ['#e8a040','#4a90d9','#3aaa60','#8a50d0','#d06060','#30a0b8'];
+
+/* ── STATE ── */
+let adminProfile = null;
+let students     = [];   // [{id, name, color_index}]
+let library      = {};   // studentId → [{id, label, active, repeating}]
+let instances    = {};   // studentId → {day → {courseDefId → instanceId|null}}
+let weekKey      = '';
+
+/* ── WEEK KEY ── */
+function getWeekKey(date = new Date()) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  const y  = d.getFullYear();
+  const m  = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
+function weekLabel(key) {
+  const mon = new Date(key + 'T00:00:00');
+  const fri = new Date(mon); fri.setDate(mon.getDate() + 4);
+  const fmt = d => d.toLocaleDateString('en-US', { month:'short', day:'numeric' });
+  return `${fmt(mon)} – ${fmt(fri)}, ${fri.getFullYear()}`;
+}
+
+function isDayToday(day) {
+  const js = new Date().getDay();
+  return js >= 1 && js <= 5 && DAYS[js - 1] === day;
+}
+
+/* ── LOAD DATA ── */
+async function loadStudents() {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('role', 'student')
+    .order('name');
+  if (error) { console.error(error); return; }
+  students = data || [];
+}
+
+async function loadLibrary() {
+  const { data, error } = await supabase
+    .from('course_definitions')
+    .select('*')
+    .eq('active', true)
+    .order('label');
+  if (error) { console.error(error); return; }
+
+  library = {};
+  students.forEach(s => { library[s.id] = []; });
+  (data || []).forEach(cd => {
+    if (library[cd.student_id]) library[cd.student_id].push(cd);
+  });
+}
+
+async function loadInstances() {
+  const { data, error } = await supabase
+    .from('week_instances')
+    .select('*')
+    .eq('week_key', weekKey)
+    .in('student_id', students.map(s => s.id));
+  if (error) { console.error(error); return; }
+
+  instances = {};
+  students.forEach(s => {
+    instances[s.id] = {};
+    DAYS.forEach(day => { instances[s.id][day] = {}; });
+  });
+
+  (data || []).forEach(inst => {
+    if (instances[inst.student_id] && instances[inst.student_id][inst.day]) {
+      instances[inst.student_id][inst.day][inst.course_def_id] = inst.id;
+    }
+  });
+}
+
+/* ── RENDER PLANNER ── */
+function renderPlanner() {
+  const body = document.getElementById('planner-body');
+  body.innerHTML = '';
+
+  if (students.length === 0) {
+    body.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:40px">No students found.</p>';
+    return;
+  }
+
+  students.forEach(student => {
+    const bg      = PALETTE[student.color_index % PALETTE.length];
+    const accent  = PALETTE_H[student.color_index % PALETTE_H.length];
+    const initials= student.name.trim().split(/\s+/).map(w=>w[0]).join('').toUpperCase().slice(0,2);
+    const courses = library[student.id] || [];
+
+    const block = document.createElement('div');
+    block.className = 'student-block';
+
+    /* — header — */
+    const hdr = document.createElement('div');
+    hdr.className = 'student-block-header';
+    hdr.style.background = bg + '55';
+    hdr.innerHTML = `
+      <div class="student-block-left">
+        <div class="student-block-avatar" style="background:${bg};color:${accent}">${initials}</div>
+        <span class="student-block-name" style="color:${accent}">${escHtml(student.name)}</span>
+      </div>
+      <button class="btn-add-temp" data-student-id="${student.id}">+ Add Course to Library</button>
+    `;
+
+    hdr.querySelector('.btn-add-temp').addEventListener('click', () => {
+      openTempCourseModal(student);
+    });
+
+    block.appendChild(hdr);
+
+    /* — grid — */
+    if (courses.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'library-empty';
+      empty.textContent = 'No courses in library yet. Add one above.';
+      block.appendChild(empty);
+    } else {
+      const table = document.createElement('table');
+      table.className = 'planner-grid';
+
+      // Header row
+      const thead = document.createElement('thead');
+      const headerRow = document.createElement('tr');
+      headerRow.innerHTML = `<th class="course-col">Course</th>`;
+      DAYS.forEach(day => {
+        const isToday = isDayToday(day);
+        headerRow.innerHTML += `<th class="${isToday ? 'today-col' : ''}">${day.slice(0,3)}</th>`;
+      });
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+
+      // Body rows
+      const tbody = document.createElement('tbody');
+      courses.forEach(course => {
+        const tr = document.createElement('tr');
+
+        // Course name cell
+        const nameTd = document.createElement('td');
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'course-cell';
+        nameDiv.innerHTML = `
+          <span class="course-cell-label">${escHtml(course.label)}</span>
+          ${!course.repeating ? '<span class="course-cell-badge">temp</span>' : ''}
+          <button class="btn-remove-course" data-course-id="${course.id}" title="Remove from library">✕</button>
+        `;
+
+        nameDiv.querySelector('.btn-remove-course').addEventListener('click', () => {
+          removeCourseFromLibrary(course, student);
+        });
+
+        nameTd.appendChild(nameDiv);
+        tr.appendChild(nameTd);
+
+        // Day checkboxes
+        DAYS.forEach(day => {
+          const td = document.createElement('td');
+          td.className = 'day-cell' + (isDayToday(day) ? ' today-col' : '');
+
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.className = 'planner-checkbox';
+          const isAssigned = !!(instances[student.id]?.[day]?.[course.id]);
+          cb.checked = isAssigned;
+
+          cb.addEventListener('change', async () => {
+            await toggleInstance(cb, student.id, course, day);
+          });
+
+          td.appendChild(cb);
+          tr.appendChild(td);
+        });
+
+        tbody.appendChild(tr);
+      });
+
+      table.appendChild(tbody);
+      block.appendChild(table);
+    }
+
+    body.appendChild(block);
+  });
+}
+
+/* ── TOGGLE INSTANCE ── */
+async function toggleInstance(cb, studentId, course, day) {
+  cb.classList.add('saving');
+  cb.disabled = true;
+
+  const existingId = instances[studentId]?.[day]?.[course.id];
+
+  if (cb.checked) {
+    // Create instance
+    const { data, error } = await supabase
+      .from('week_instances')
+      .insert({
+        week_key      : weekKey,
+        student_id    : studentId,
+        course_def_id : course.id,
+        label         : course.label,
+        day           : day,
+        completed     : false,
+        hidden        : false,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('insert error:', error);
+      cb.checked = false;
+      cb.classList.remove('saving');
+      cb.disabled = false;
+      toast('Failed to save — try again');
+      return;
+    }
+
+    instances[studentId][day][course.id] = data.id;
+  } else {
+    // Delete instance
+    if (!existingId) {
+      cb.classList.remove('saving');
+      cb.disabled = false;
+      return;
+    }
+
+    const { error } = await supabase
+      .from('week_instances')
+      .delete()
+      .eq('id', existingId);
+
+    if (error) {
+      console.error('delete error:', error);
+      cb.checked = true;
+      cb.classList.remove('saving');
+      cb.disabled = false;
+      toast('Failed to remove — try again');
+      return;
+    }
+
+    delete instances[studentId][day][course.id];
+  }
+
+  cb.classList.remove('saving');
+  cb.classList.add('saved');
+  cb.disabled = false;
+  setSaveStatus('Saved');
+  setTimeout(() => cb.classList.remove('saved'), 800);
+}
+
+/* ── REMOVE COURSE FROM LIBRARY ── */
+async function removeCourseFromLibrary(course, student) {
+  // Check if it has any instances this week
+  const hasInstances = DAYS.some(day => instances[student.id]?.[day]?.[course.id]);
+
+  const msg = hasInstances
+    ? `Remove "${course.label}" from ${student.name}'s library? It's currently assigned this week and will be removed from all days.`
+    : `Remove "${course.label}" from ${student.name}'s library?`;
+
+  if (!confirm(msg)) return;
+
+  // Delete all week instances for this course if any
+  if (hasInstances) {
+    await supabase
+      .from('week_instances')
+      .delete()
+      .eq('week_key', weekKey)
+      .eq('student_id', student.id)
+      .eq('course_def_id', course.id);
+  }
+
+  // Deactivate the course definition (soft delete)
+  const { error } = await supabase
+    .from('course_definitions')
+    .update({ active: false })
+    .eq('id', course.id);
+
+  if (error) { toast('Failed to remove course'); return; }
+
+  // Update local state and re-render
+  library[student.id] = library[student.id].filter(c => c.id !== course.id);
+  DAYS.forEach(day => { delete instances[student.id][day][course.id]; });
+
+  renderPlanner();
+  toast(`"${course.label}" removed from library`);
+}
+
+/* ── TEMP COURSE MODAL ── */
+let _tempStudent = null;
+
+function openTempCourseModal(student) {
+  _tempStudent = student;
+  document.getElementById('temp-course-student-name').textContent = student.name;
+  document.getElementById('temp-course-input').value = '';
+  document.getElementById('temp-course-flag').checked = false;
+  showModal('modal-temp-course');
+  setTimeout(() => document.getElementById('temp-course-input').focus(), 60);
+}
+
+document.getElementById('btn-save-temp-course').addEventListener('click', saveTempCourse);
+document.getElementById('temp-course-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') saveTempCourse();
+});
+
+async function saveTempCourse() {
+  const label = document.getElementById('temp-course-input').value.trim();
+  if (!label) { document.getElementById('temp-course-input').focus(); return; }
+
+  const isTemp = document.getElementById('temp-course-flag').checked;
+
+  const { data, error } = await supabase
+    .from('course_definitions')
+    .insert({
+      student_id : _tempStudent.id,
+      label,
+      days       : [],
+      active     : true,
+      repeating  : !isTemp,
+    })
+    .select()
+    .single();
+
+  if (error) { toast('Failed to add course'); console.error(error); return; }
+
+  library[_tempStudent.id].push(data);
+  library[_tempStudent.id].sort((a,b) => a.label.localeCompare(b.label));
+
+  closeModal('modal-temp-course');
+  renderPlanner();
+  toast(`"${label}" added to ${_tempStudent.name}'s library`);
+}
+
+/* ── SAVE STATUS ── */
+let _saveTimer;
+function setSaveStatus(msg) {
+  const el = document.getElementById('save-status');
+  el.textContent = msg;
+  el.style.opacity = '1';
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => { el.style.opacity = '0'; }, 2000);
+}
+
+/* ── MODAL HELPERS ── */
+function showModal(id) { document.getElementById(id).classList.remove('hidden'); }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+document.querySelectorAll('.modal-close').forEach(btn => {
+  btn.addEventListener('click', () => closeModal(btn.dataset.close));
+});
+document.querySelectorAll('.modal-backdrop').forEach(bd => {
+  bd.addEventListener('click', e => { if (e.target === bd) closeModal(bd.id); });
+});
+
+/* ── TOAST ── */
+let _toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.add('hidden'), 2400);
+}
+
+/* ── UTILS ── */
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ── INIT ── */
+async function init() {
+  adminProfile = await requireAdmin();
+  if (!adminProfile) return;
+
+  weekKey = getWeekKey();
+  document.getElementById('week-label').textContent = 'Week of ' + weekLabel(weekKey);
+
+  await loadStudents();
+  await loadLibrary();
+  await loadInstances();
+
+  renderPlanner();
+
+  document.getElementById('btn-logout').addEventListener('click', logout);
+}
+
+init();
+</script>
+</body>
+</html>

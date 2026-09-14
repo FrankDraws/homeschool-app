@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign In — Homeschool Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800&family=Nunito+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:      #f5f4f0;
+    --surface: #ffffff;
+    --border:  #e8e6e0;
+    --text:    #2c2a26;
+    --muted:   #7a7570;
+    --faint:   #b0ada8;
+    --accent:  #4a90d9;
+    --danger:  #e05252;
+    --radius:  14px;
+    --shadow:  0 8px 32px rgba(0,0,0,0.09), 0 2px 8px rgba(0,0,0,0.05);
+  }
+
+  body {
+    font-family: 'Nunito Sans', sans-serif;
+    background: var(--bg);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .login-card {
+    background: var(--surface);
+    border-radius: 20px;
+    box-shadow: var(--shadow);
+    padding: 40px 44px;
+    width: 100%;
+    max-width: 400px;
+  }
+
+  .login-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 28px;
+  }
+
+  .login-logo svg {
+    flex-shrink: 0;
+  }
+
+  .login-title {
+    font-family: 'Nunito', sans-serif;
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--text);
+    line-height: 1.1;
+  }
+
+  .login-subtitle {
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-top: 1px;
+  }
+
+  .field {
+    margin-bottom: 16px;
+  }
+
+  .field label {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--faint);
+    margin-bottom: 6px;
+    font-family: 'Nunito', sans-serif;
+  }
+
+  .field input {
+    width: 100%;
+    font-family: 'Nunito Sans', sans-serif;
+    font-size: 0.92rem;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    background: #f9f8f5;
+    color: var(--text);
+    transition: border-color 0.15s, background 0.15s;
+    outline: none;
+  }
+
+  .field input:focus {
+    border-color: var(--accent);
+    background: var(--surface);
+  }
+
+  .btn-login {
+    width: 100%;
+    font-family: 'Nunito', sans-serif;
+    font-size: 0.92rem;
+    font-weight: 800;
+    padding: 12px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: background 0.15s, opacity 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .btn-login:hover { background: #3a7fc8; }
+  .btn-login:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255,255,255,0.4);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: none;
+  }
+
+  .btn-login.loading .spinner { display: block; }
+  .btn-login.loading .btn-label { opacity: 0.6; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .error-msg {
+    background: #fdeaea;
+    color: var(--danger);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    margin-top: 14px;
+    display: none;
+  }
+
+  .error-msg.visible { display: block; }
+</style>
+</head>
+<body>
+
+<div class="login-card">
+  <div class="login-logo">
+    <svg width="32" height="32" viewBox="0 0 28 28" fill="none">
+      <rect width="28" height="28" rx="8" fill="#4a90d9"/>
+      <path d="M7 10h14M7 14h10M7 18h12" stroke="white" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <div>
+      <div class="login-title">Homeschool Tracker</div>
+      <div class="login-subtitle">Sign in to continue</div>
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="email">Email</label>
+    <input type="email" id="email" placeholder="you@example.com" autocomplete="email">
+  </div>
+
+  <div class="field">
+    <label for="password">Password</label>
+    <input type="password" id="password" placeholder="••••••••" autocomplete="current-password">
+  </div>
+
+  <button class="btn-login" id="btn-login">
+    <div class="spinner"></div>
+    <span class="btn-label">Sign In</span>
+  </button>
+
+  <div class="error-msg" id="error-msg"></div>
+</div>
+
+<script type="module">
+  import { login, routeByRole, getSessionAndProfile } from './auth.js';
+
+  // If already logged in, skip the login page
+  (async () => {
+    const { profile } = await getSessionAndProfile();
+    if (profile) routeByRole(profile);
+  })();
+
+  const emailEl    = document.getElementById('email');
+  const passwordEl = document.getElementById('password');
+  const btnEl      = document.getElementById('btn-login');
+  const errorEl    = document.getElementById('error-msg');
+
+  async function handleLogin() {
+    const email    = emailEl.value.trim();
+    const password = passwordEl.value;
+
+    if (!email || !password) {
+      showError('Please enter your email and password.');
+      return;
+    }
+
+    setLoading(true);
+    hideError();
+
+    const { profile, error } = await login(email, password);
+
+    if (error) {
+      setLoading(false);
+      showError(error);
+      return;
+    }
+
+    // Routing happens here — no need to stop the loader
+    routeByRole(profile);
+  }
+
+  btnEl.addEventListener('click', handleLogin);
+
+  // Allow Enter key from either field
+  [emailEl, passwordEl].forEach(el => {
+    el.addEventListener('keydown', e => { if (e.key === 'Enter') handleLogin(); });
+  });
+
+  function setLoading(on) {
+    btnEl.disabled = on;
+    btnEl.classList.toggle('loading', on);
+  }
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.classList.add('visible');
+  }
+
+  function hideError() {
+    errorEl.classList.remove('visible');
+  }
+</script>
+
+</body>
+</html>

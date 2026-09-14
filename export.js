@@ -16,7 +16,7 @@ const LAST_EXPORT_KEY = 'hs_last_export';
 const AUTO_EXPORT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 /* ── BUILD EXPORT PAYLOAD ────────────────────────────────── */
-function buildExportPayload() {
+export function buildExportPayload() {
   const payload = {
     exportedAt : new Date().toISOString(),
     version    : 1,
@@ -30,7 +30,7 @@ function buildExportPayload() {
 }
 
 /* ── TRIGGER DOWNLOAD ────────────────────────────────────── */
-function downloadJSON(payload, label = '') {
+export function downloadJSON(payload, label = '') {
   const date  = new Date().toISOString().slice(0, 10);
   const slug  = label ? `-${label.replace(/\s+/g, '-')}` : '';
   const fname = `hs-tracker${slug}-${date}.json`;
@@ -50,14 +50,14 @@ function downloadJSON(payload, label = '') {
 }
 
 /* ── MANUAL EXPORT ───────────────────────────────────────── */
-function exportAll(label = '') {
+export function exportAll(label = '') {
   downloadJSON(buildExportPayload(), label);
 }
 
 /* ── AUTO EXPORT ON CLOSE WEEK ───────────────────────────── */
 // Call this after archiving a week. Passes the week label for
 // a meaningful filename e.g. hs-tracker-Apr-13–17-2026.json
-function autoExportOnCloseWeek(weekLabel) {
+export function autoExportOnCloseWeek(weekLabel) {
   downloadJSON(buildExportPayload(), weekLabel);
   console.info('[HS Tracker] Auto-exported on week close:', weekLabel);
 }
@@ -65,7 +65,7 @@ function autoExportOnCloseWeek(weekLabel) {
 /* ── PERIODIC AUTO EXPORT (7-DAY TIMER) ──────────────────── */
 // Called once on app load. If it's been more than 7 days since
 // the last export, triggers a download immediately.
-function checkPeriodicExport() {
+export function checkPeriodicExport() {
   const last = localStorage.getItem(LAST_EXPORT_KEY);
   if (!last) return; // never exported yet — don't nag on first run
 
@@ -77,7 +77,7 @@ function checkPeriodicExport() {
 }
 
 /* ── EXPORT STATUS HELPERS ───────────────────────────────── */
-function lastExportLabel() {
+export function lastExportLabel() {
   const last = localStorage.getItem(LAST_EXPORT_KEY);
   if (!last) return 'Never exported';
   const d = new Date(last);

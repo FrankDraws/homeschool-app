@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800&family=Nunito+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:           #f5f4f0;
+    --surface:      #ffffff;
+    --surface-2:    #f9f8f5;
+    --border:       #e8e6e0;
+    --border-light: #f0ede8;
+    --text:         #2c2a26;
+    --muted:        #7a7570;
+    --faint:        #b0ada8;
+    --accent:       #4a90d9;
+    --accent-light: #e8f2fc;
+    --success:      #3aaa60;
+    --success-light:#edf7ed;
+    --warn:         #f0a030;
+    --warn-light:   #fef4e5;
+    --danger:       #e05252;
+    --radius:       14px;
+    --shadow-sm:    0 1px 3px rgba(0,0,0,0.07);
+    --shadow:       0 4px 12px rgba(0,0,0,0.08);
+    --font-display: 'Nunito', sans-serif;
+    --font-body:    'Nunito Sans', sans-serif;
+    --transition:   0.18s ease;
+  }
+
+  html, body { height: 100%; }
+
+  body {
+    font-family: var(--font-body);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── LOADING SCREEN ── */
+  #loading {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+
+  .loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #app { display: none; }
+  #app.ready { display: block; }
+
+  /* ── HEADER ── */
+  .app-header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: var(--shadow-sm);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .header-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-display);
+    font-size: 0.8rem;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+
+  .header-name {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: var(--text);
+    line-height: 1.1;
+  }
+
+  .header-date {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 1px;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .weekly-pill {
+    font-family: var(--font-display);
+    font-size: 0.78rem;
+    font-weight: 800;
+    padding: 5px 12px;
+    border-radius: 99px;
+    background: var(--success-light);
+    color: var(--success);
+  }
+
+  .weekly-pill.warn { background: var(--warn-light); color: var(--warn); }
+  .weekly-pill.low  { background: #fdeaea; color: var(--danger); }
+
+  .btn-logout {
+    font-family: var(--font-display);
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1.5px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: background var(--transition);
+  }
+  .btn-logout:hover { background: var(--surface-2); color: var(--text); }
+
+  /* ── DAY TABS ── */
+  .day-tabs {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    overflow-x: auto;
+    padding: 0 16px;
+    gap: 2px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .day-tabs::-webkit-scrollbar { display: none; }
+
+  .day-tab {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 20px 10px;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    transition: all var(--transition);
+    gap: 3px;
+    min-width: 80px;
+    border-radius: 0;
+    background: none;
+    border-left: none;
+    border-right: none;
+    border-top: none;
+  }
+
+  .day-tab:hover { background: var(--surface-2); }
+
+  .day-tab.active {
+    border-bottom-color: var(--accent);
+  }
+
+  .day-tab-name {
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+
+  .day-tab.active .day-tab-name { color: var(--accent); }
+  .day-tab.today .day-tab-name  { color: var(--text); }
+  .day-tab.today.active .day-tab-name { color: var(--accent); }
+
+  .day-tab-fraction {
+    font-family: var(--font-display);
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--faint);
+  }
+
+  .day-tab.active .day-tab-fraction { color: var(--accent); }
+
+  .day-tab-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: transparent;
+  }
+
+  .day-tab.today .day-tab-dot { background: var(--accent); }
+
+  /* ── MAIN CONTENT ── */
+  .day-content {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 24px 20px 40px;
+  }
+
+  /* ── DAY PROGRESS ── */
+  .day-progress-block {
+    background: var(--surface);
+    border-radius: var(--radius);
+    border: 1.5px solid var(--border-light);
+    box-shadow: var(--shadow-sm);
+    padding: 16px 20px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .day-progress-label {
+    font-family: var(--font-display);
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .day-progress-bar-bg {
+    flex: 1;
+    height: 8px;
+    background: var(--border-light);
+    border-radius: 99px;
+    overflow: hidden;
+  }
+
+  .day-progress-bar-fill {
+    height: 100%;
+    border-radius: 99px;
+    background: var(--success);
+    transition: width 0.4s ease;
+  }
+
+  .day-progress-bar-fill.warn { background: var(--warn); }
+  .day-progress-bar-fill.low  { background: var(--danger); }
+
+  .day-progress-pct {
+    font-family: var(--font-display);
+    font-size: 0.88rem;
+    font-weight: 800;
+    min-width: 36px;
+    text-align: right;
+    color: var(--success);
+  }
+
+  .day-progress-pct.warn { color: var(--warn); }
+  .day-progress-pct.low  { color: var(--danger); }
+
+  /* ── COURSE LIST ── */
+  .course-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .course-card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    border: 1.5px solid var(--border-light);
+    box-shadow: var(--shadow-sm);
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    transition: box-shadow var(--transition), border-color var(--transition);
+    cursor: pointer;
+  }
+
+  .course-card:hover { box-shadow: var(--shadow); }
+
+  .course-card.done {
+    background: var(--success-light);
+    border-color: #c3e6cb;
+  }
+
+  .course-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+    border: 2px solid var(--border);
+    background: var(--surface);
+    cursor: pointer;
+    flex-shrink: 0;
+    position: relative;
+    transition: background var(--transition), border-color var(--transition);
+  }
+
+  .course-checkbox:checked {
+    background: var(--success);
+    border-color: var(--success);
+  }
+
+  .course-checkbox:checked::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 2px;
+    width: 8px;
+    height: 12px;
+    border: 2.5px solid white;
+    border-top: none;
+    border-left: none;
+    transform: rotate(42deg);
+  }
+
+  .course-label {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+    transition: color var(--transition);
+  }
+
+  .course-card.done .course-label {
+    text-decoration: line-through;
+    color: var(--muted);
+  }
+
+  /* ── EMPTY STATE ── */
+  .day-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--muted);
+    font-size: 0.88rem;
+  }
+
+  .day-empty-icon {
+    font-size: 2rem;
+    margin-bottom: 10px;
+    opacity: 0.4;
+  }
+
+  /* ── ALL DONE STATE ── */
+  .all-done {
+    text-align: center;
+    padding: 20px;
+    color: var(--success);
+    font-family: var(--font-display);
+    font-size: 0.92rem;
+    font-weight: 700;
+  }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="loading-spinner"></div>
+</div>
+
+<div id="app">
+  <header class="app-header">
+    <div class="header-left">
+      <div class="header-avatar" id="header-avatar"></div>
+      <div>
+        <div class="header-name" id="header-name">Loading…</div>
+        <div class="header-date" id="header-date"></div>
+      </div>
+    </div>
+    <div class="header-right">
+      <span class="weekly-pill" id="weekly-pill">—</span>
+      <button class="btn-logout" id="btn-logout">Sign Out</button>
+    </div>
+  </header>
+
+  <nav class="day-tabs" id="day-tabs"><!-- built by JS --></nav>
+
+  <main class="day-content">
+    <div class="day-progress-block" id="day-progress-block">
+      <span class="day-progress-label" id="day-progress-label">Today</span>
+      <div class="day-progress-bar-bg">
+        <div class="day-progress-bar-fill" id="day-progress-fill" style="width:0%"></div>
+      </div>
+      <span class="day-progress-pct" id="day-progress-pct">0%</span>
+    </div>
+    <div class="course-list" id="course-list"><!-- built by JS --></div>
+  </main>
+</div>
+
+<script type="module">
+import { supabase }              from './supabase.js';
+import { requireAuth, logout }   from './auth.js';
+
+/* ── CONSTANTS ── */
+const DAYS    = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
+const PALETTE = ['#fde8c8','#d8edf8','#d8f0e4','#ede0f8','#fde0e0','#e0f4f8'];
+const PALETTE_H = ['#e8a040','#4a90d9','#3aaa60','#8a50d0','#d06060','#30a0b8'];
+
+/* ── STATE ── */
+let profile     = null;
+let weekKey     = '';
+let activeDay   = '';
+let instances   = [];  // all week_instances rows for this student this week
+
+/* ── WEEK KEY ── */
+function getWeekKey(date = new Date()) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  const y  = d.getFullYear();
+  const m  = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
+function getTodayName() {
+  const js = new Date().getDay();
+  return (js >= 1 && js <= 5) ? DAYS[js - 1] : DAYS[0];
+}
+
+function formatDate(d = new Date()) {
+  return d.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+}
+
+/* ── LOAD INSTANCES FROM SUPABASE ── */
+async function loadInstances() {
+  const { data, error } = await supabase
+    .from('week_instances')
+    .select('*')
+    .eq('student_id', profile.id)
+    .eq('week_key', weekKey)
+    .eq('hidden', false);
+
+  if (error) { console.error('loadInstances error:', error); return; }
+  instances = data || [];
+}
+
+/* ── INSTANCES FOR A DAY ── */
+function instancesForDay(day) {
+  return instances.filter(i => i.day === day);
+}
+
+/* ── COMPLETION STATS ── */
+function statsForDay(day) {
+  const rows  = instancesForDay(day);
+  const total = rows.length;
+  const done  = rows.filter(r => r.completed).length;
+  return { total, done, pct: total === 0 ? 0 : Math.round((done / total) * 100) };
+}
+
+function statsForWeek() {
+  const total = instances.length;
+  const done  = instances.filter(r => r.completed).length;
+  return { total, done, pct: total === 0 ? 0 : Math.round((done / total) * 100) };
+}
+
+/* ── PILL CLASS ── */
+function pillClass(pct) {
+  return pct >= 80 ? '' : pct >= 40 ? 'warn' : 'low';
+}
+
+/* ── RENDER TABS ── */
+function renderTabs() {
+  const nav = document.getElementById('day-tabs');
+  nav.innerHTML = '';
+  DAYS.forEach(day => {
+    const { done, total } = statsForDay(day);
+    const isToday  = day === getTodayName();
+    const isActive = day === activeDay;
+    const tab = document.createElement('button');
+    tab.className = 'day-tab' +
+      (isToday  ? ' today'  : '') +
+      (isActive ? ' active' : '');
+    tab.innerHTML = `
+      <div class="day-tab-dot"></div>
+      <div class="day-tab-name">${day.slice(0,3)}</div>
+      <div class="day-tab-fraction">${done}/${total}</div>
+    `;
+    tab.addEventListener('click', () => {
+      activeDay = day;
+      renderTabs();
+      renderDayView();
+    });
+    nav.appendChild(tab);
+  });
+}
+
+/* ── RENDER DAY VIEW ── */
+function renderDayView() {
+  const { done, total, pct } = statsForDay(activeDay);
+  const cls = pillClass(pct);
+
+  // Progress bar
+  const fill  = document.getElementById('day-progress-fill');
+  const pctEl = document.getElementById('day-progress-pct');
+  const label = document.getElementById('day-progress-label');
+  fill.style.width = pct + '%';
+  fill.className   = 'day-progress-bar-fill' + (cls ? ' ' + cls : '');
+  pctEl.textContent = pct + '%';
+  pctEl.className   = 'day-progress-pct' + (cls ? ' ' + cls : '');
+  label.textContent = activeDay === getTodayName() ? 'Today' : activeDay;
+
+  // Weekly pill
+  const ws  = statsForWeek();
+  const wpill = document.getElementById('weekly-pill');
+  wpill.textContent = `${ws.done}/${ws.total} this week`;
+  wpill.className   = 'weekly-pill' + (ws.pct >= 80 ? '' : ws.pct >= 40 ? ' warn' : ' low');
+
+  // Course list
+  const list = document.getElementById('course-list');
+  list.innerHTML = '';
+
+  const rows = instancesForDay(activeDay);
+
+  if (rows.length === 0) {
+    list.innerHTML = `
+      <div class="day-empty">
+        <div class="day-empty-icon">📭</div>
+        <p>No courses scheduled for ${activeDay}.</p>
+      </div>`;
+    return;
+  }
+
+  rows.forEach(row => {
+    const card = document.createElement('div');
+    card.className = 'course-card' + (row.completed ? ' done' : '');
+
+    const cbId = `cb-${row.id}`;
+    card.innerHTML = `
+      <input type="checkbox" class="course-checkbox" id="${cbId}" ${row.completed ? 'checked' : ''}>
+      <label class="course-label" for="${cbId}">${escHtml(row.label)}</label>
+    `;
+
+    const cb = card.querySelector('input');
+    cb.addEventListener('change', async () => {
+      const val = cb.checked;
+      card.classList.toggle('done', val);
+      row.completed = val;
+
+      // Update in Supabase
+      const { error } = await supabase
+        .from('week_instances')
+        .update({ completed: val })
+        .eq('id', row.id);
+
+      if (error) {
+        console.error('update error:', error);
+        // Revert on failure
+        cb.checked = !val;
+        card.classList.toggle('done', !val);
+        row.completed = !val;
+      }
+
+      renderTabs();
+      renderDayView();
+    });
+
+    // Clicking the card also toggles
+    card.addEventListener('click', e => {
+      if (e.target !== cb) cb.click();
+    });
+
+    list.appendChild(card);
+  });
+
+  // All done message
+  if (done === total && total > 0) {
+    const msg = document.createElement('div');
+    msg.className = 'all-done';
+    msg.textContent = '🎉 All done for ' + (activeDay === getTodayName() ? 'today' : activeDay) + '!';
+    list.appendChild(msg);
+  }
+}
+
+/* ── ESCAPE HTML ── */
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ── INIT ── */
+async function init() {
+  // Auth check
+  profile = await requireAuth();
+  if (!profile) return; // redirected to login
+
+  // If admin accidentally lands here, send them to the right place
+  if (profile.role === 'admin') {
+    window.location.href = '/index.html';
+    return;
+  }
+
+  weekKey   = getWeekKey();
+  activeDay = getTodayName();
+
+  // Set up header
+  const bg      = PALETTE[profile.color_index % PALETTE.length];
+  const accent  = PALETTE_H[profile.color_index % PALETTE_H.length];
+  const initials = profile.name.trim().split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0,2);
+
+  const avatarEl = document.getElementById('header-avatar');
+  avatarEl.style.background = bg;
+  avatarEl.style.color      = accent;
+  avatarEl.textContent      = initials;
+
+  document.getElementById('header-name').textContent = profile.name;
+  document.getElementById('header-date').textContent = formatDate();
+
+  // Load data
+  await loadInstances();
+
+  // Render
+  renderTabs();
+  renderDayView();
+
+  // Show app, hide loader
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('app').classList.add('ready');
+
+  // Logout
+  document.getElementById('btn-logout').addEventListener('click', logout);
+}
+
+init();
+</script>
+</body>
+</html>
