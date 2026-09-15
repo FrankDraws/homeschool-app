@@ -8,6 +8,25 @@
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=Nunito+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="archive.css">
+<style>
+  .detail-export-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+
+  .detail-export-label {
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-right: 4px;
+  }
+</style>
 </head>
 <body>
 
@@ -31,7 +50,8 @@
     <div class="header-right">
       <div class="archive-filter-bar">
         <input class="input-inline archive-search" id="archive-search" placeholder="Search weeks or students…">
-        <button class="btn btn-ghost" id="btn-export">⬇ Export JSON</button>
+        <button class="btn btn-ghost" id="btn-export">⬇ Full Backup</button>
+        <button class="btn btn-ghost" id="btn-logout">Sign Out</button>
       </div>
     </div>
   </header>
@@ -39,13 +59,13 @@
   <!-- MAIN -->
   <main class="archive-main">
 
-    <!-- SIDEBAR: week list -->
+    <!-- SIDEBAR -->
     <aside class="archive-sidebar" id="archive-sidebar">
       <div class="sidebar-section-label">Weeks</div>
       <div id="week-list"><!-- built by JS --></div>
     </aside>
 
-    <!-- DETAIL: selected week -->
+    <!-- DETAIL -->
     <section class="archive-detail" id="archive-detail">
       <div class="archive-detail-empty" id="detail-empty">
         <div class="archive-empty-icon">📋</div>
@@ -58,7 +78,6 @@
 
 </div>
 
-<script src="export.js"></script>
-<script src="archive.js"></script>
+<script type="module" src="archive.js"></script>
 </body>
 </html>
