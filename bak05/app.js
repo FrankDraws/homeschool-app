@@ -119,11 +119,9 @@ function isCardHidden(studentId, day) {
 }
 
 /* ── COURSE LIBRARY HELPERS ─────────────────────────────────── */
-/* A student's default courses = their whole course library
-   (the same list the Plan Week page shows). */
 function defaultsFor(studentId) {
   return library
-    .filter(c => c.student_id === studentId)
+    .filter(c => c.student_id === studentId && c.repeating)
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
@@ -133,7 +131,7 @@ function findDefByLabel(studentId, label) {
 }
 
 /* Reuse an existing course definition with the same name, or create one. */
-async function findOrCreateDef(studentId, label) {
+async function findOrCreateDef(studentId, label, repeating) {
   const existing = findDefByLabel(studentId, label);
   if (existing) return existing;
 
@@ -144,7 +142,7 @@ async function findOrCreateDef(studentId, label) {
       label,
       days       : [],
       active     : true,
-      repeating  : true,   // "temp" no longer used; kept true for consistency
+      repeating,
     })
     .select()
     .single();
@@ -593,7 +591,7 @@ async function saveAddCourse() {
   try {
     // Reuses an existing course with the same name (default or not);
     // otherwise creates a non-default ("temp") course in the library.
-    const def     = await findOrCreateDef(_acStudent.id, label);
+    const def     = await findOrCreateDef(_acStudent.id, label, false);
     const changed = await ensureInstances(_acStudent.id, def, days);
 
     closeModal('modal-add-course');
@@ -626,7 +624,7 @@ function renderDefaultsList() {
 
   const defs = defaultsFor(_defStudent.id);
   if (defs.length === 0) {
-    list.innerHTML = '<p class="modal-empty">No courses yet.</p>';
+    list.innerHTML = '<p class="modal-empty">No default courses yet.</p>';
     return;
   }
   defs.forEach(def => list.appendChild(buildDefaultRow(def)));
@@ -680,7 +678,7 @@ async function renameDefault(def, input) {
 }
 
 async function deleteDefault(def) {
-  if (!confirm(`Delete "${def.label}" from ${_defStudent.name}'s courses? It will also be removed from every day this week.`)) return;
+  if (!confirm(`Delete "${def.label}" from ${_defStudent.name}'s default courses? It will also be removed from every day this week.`)) return;
 
   const { error: instErr } = await supabase
     .from('week_instances')
@@ -745,16 +743,27 @@ document.getElementById('def-add').addEventListener('click', () => {
   input.focus();
 });
 
-/* Adds the course to the student's library only. Days are assigned
-   in Plan Week or with + Add Course on a card. */
 async function createDefault(student, label) {
   try {
-    if (findDefByLabel(student.id, label)) {
-      toast(`"${label}" is already in ${student.name}'s courses`);
-      return;
+    let def = findDefByLabel(student.id, label);
+
+    if (def && def.repeating) { toast(`"${def.label}" is already a default`); return; }
+
+    if (def) {
+      // Existing non-default course → promote it
+      const { error } = await supabase
+        .from('course_definitions')
+        .update({ repeating: true })
+        .eq('id', def.id);
+      if (error) throw error;
+      def.repeating = true;
+    } else {
+      def = await findOrCreateDef(student.id, label, true);
     }
-    const def = await findOrCreateDef(student.id, label);
-    toast(`"${def.label}" added to ${student.name}'s courses`);
+
+    await ensureInstances(student.id, def, DAYS);
+    renderGrid();
+    toast(`"${def.label}" added to defaults`);
   } catch (err) {
     console.error('create default:', err);
     toast('Failed to add course — try again');

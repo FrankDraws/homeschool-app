@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Homeschool Weekly Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=Nunito+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- HEADER -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="app-logo">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+          <rect width="28" height="28" rx="8" fill="var(--accent)"/>
+          <path d="M7 10h14M7 14h10M7 18h12" stroke="white" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="app-title">Weekly Tracker</h1>
+        <p class="app-subtitle" id="week-label">Loading…</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <a href="archive.html" class="btn btn-ghost">📋 Archive</a>
+      <a href="planner.html" class="btn btn-ghost">📅 Plan Week</a>
+      <button class="btn btn-ghost" id="btn-manage">⚙ Manage Students</button>
+      <button class="btn btn-primary" id="btn-close-week">Close Week</button>
+      <button class="btn btn-ghost" id="btn-logout">Sign Out</button>
+    </div>
+  </header>
+
+  <!-- SUMMARY STRIP -->
+  <div class="summary-strip" id="summary-strip"><!-- built by JS --></div>
+
+  <!-- WEEK GRID -->
+  <main class="week-grid-wrapper">
+    <div class="week-grid" id="week-grid">
+      <!-- Columns built by JS -->
+    </div>
+  </main>
+
+</div>
+
+<!-- MODAL: Manage Students -->
+<div class="modal-backdrop hidden" id="modal-students">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Manage Students</h2>
+      <button class="modal-close" data-close="modal-students">✕</button>
+    </div>
+    <div class="modal-body" id="student-list-editor">
+      <!-- built by JS -->
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast" class="toast hidden"></div>
+
+<script type="module" src="export.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

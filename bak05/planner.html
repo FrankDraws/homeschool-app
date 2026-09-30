@@ -310,11 +310,16 @@
     <div class="modal-body">
       <p class="temp-course-note">
         This adds a course to the library. You can then assign it to specific days in the planner.
+        Mark it as temporary if it's only needed for a limited time.
       </p>
       <p class="field-label">Course name</p>
       <input class="input-inline" id="temp-course-input"
         placeholder="e.g. Essay writing, Latin, Art…"
         style="width:100%;margin-bottom:16px">
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.83rem;cursor:pointer">
+        <input type="checkbox" id="temp-course-flag" style="width:16px;height:16px">
+        Mark as temporary
+      </label>
     </div>
     <div class="modal-footer">
       <button class="btn btn-primary" id="btn-save-temp-course">Add to Library</button>
@@ -481,6 +486,7 @@ function renderPlanner() {
         nameDiv.className = 'course-cell';
         nameDiv.innerHTML = `
           <span class="course-cell-label">${escHtml(course.label)}</span>
+          ${!course.repeating ? '<span class="course-cell-badge">temp</span>' : ''}
           <button class="btn-remove-course" data-course-id="${course.id}" title="Remove from library">✕</button>
         `;
 
@@ -630,6 +636,7 @@ function openTempCourseModal(student) {
   _tempStudent = student;
   document.getElementById('temp-course-student-name').textContent = student.name;
   document.getElementById('temp-course-input').value = '';
+  document.getElementById('temp-course-flag').checked = false;
   showModal('modal-temp-course');
   setTimeout(() => document.getElementById('temp-course-input').focus(), 60);
 }
@@ -643,6 +650,8 @@ async function saveTempCourse() {
   const label = document.getElementById('temp-course-input').value.trim();
   if (!label) { document.getElementById('temp-course-input').focus(); return; }
 
+  const isTemp = document.getElementById('temp-course-flag').checked;
+
   const { data, error } = await supabase
     .from('course_definitions')
     .insert({
@@ -650,7 +659,7 @@ async function saveTempCourse() {
       label,
       days       : [],
       active     : true,
-      repeating  : true,   // "temp" option removed
+      repeating  : !isTemp,
     })
     .select()
     .single();

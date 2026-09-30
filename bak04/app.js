@@ -15,7 +15,6 @@ const PALETTE_H = ['#e8a040','#4a90d9','#3aaa60','#8a50d0','#d06060','#30a0b8'];
 /* ── STATE ─────────────────────────────────────────────────── */
 let adminProfile = null;
 let students     = [];   // [{id, name, color_index}]
-let library      = [];   // active course_definitions rows for all students
 let instances    = [];   // all week_instance rows for current week
 let hiddenCards  = {};   // studentId → [day,...]
 let weekKey      = '';
@@ -65,18 +64,6 @@ async function loadStudents() {
   students = data || [];
 }
 
-async function loadLibrary() {
-  if (students.length === 0) { library = []; return; }
-  const { data, error } = await supabase
-    .from('course_definitions')
-    .select('*')
-    .eq('active', true)
-    .in('student_id', students.map(s => s.id))
-    .order('label');
-  if (error) { console.error('loadLibrary:', error); return; }
-  library = data || [];
-}
-
 async function loadInstances() {
   if (students.length === 0) return;
   const { data, error } = await supabase
@@ -116,93 +103,6 @@ function instancesForStudentDay(studentId, day) {
 
 function isCardHidden(studentId, day) {
   return (hiddenCards[studentId] || []).includes(day);
-}
-
-/* ── COURSE LIBRARY HELPERS ─────────────────────────────────── */
-/* A student's default courses = their whole course library
-   (the same list the Plan Week page shows). */
-function defaultsFor(studentId) {
-  return library
-    .filter(c => c.student_id === studentId)
-    .sort((a, b) => a.label.localeCompare(b.label));
-}
-
-function findDefByLabel(studentId, label) {
-  const key = label.trim().toLowerCase();
-  return library.find(c => c.student_id === studentId && c.label.toLowerCase() === key);
-}
-
-/* Reuse an existing course definition with the same name, or create one. */
-async function findOrCreateDef(studentId, label) {
-  const existing = findDefByLabel(studentId, label);
-  if (existing) return existing;
-
-  const { data, error } = await supabase
-    .from('course_definitions')
-    .insert({
-      student_id : studentId,
-      label,
-      days       : [],
-      active     : true,
-      repeating  : true,   // "temp" no longer used; kept true for consistency
-    })
-    .select()
-    .single();
-
-  if (error) throw error;
-  library.push(data);
-  return data;
-}
-
-/* Make sure `def` shows on each of `days` this week.
-   - no instance yet  → insert one
-   - hidden instance  → un-hide it (e.g. after the row ✕)
-   - visible instance → leave it alone
-   Returns how many days actually changed. */
-async function ensureInstances(studentId, def, days) {
-  const toInsert = [];
-  const toUnhide = [];
-
-  days.forEach(day => {
-    const existing = instances.find(i =>
-      i.student_id === studentId &&
-      i.course_def_id === def.id &&
-      i.day === day
-    );
-    if (!existing) {
-      toInsert.push({
-        week_key      : weekKey,
-        student_id    : studentId,
-        course_def_id : def.id,
-        label         : def.label,
-        day,
-        completed     : false,
-        hidden        : false,
-      });
-    } else if (existing.hidden) {
-      toUnhide.push(existing);
-    }
-  });
-
-  if (toInsert.length) {
-    const { data, error } = await supabase
-      .from('week_instances')
-      .insert(toInsert)
-      .select();
-    if (error) throw error;
-    instances.push(...(data || []));
-  }
-
-  if (toUnhide.length) {
-    const { error } = await supabase
-      .from('week_instances')
-      .update({ hidden: false })
-      .in('id', toUnhide.map(i => i.id));
-    if (error) throw error;
-    toUnhide.forEach(i => { i.hidden = false; });
-  }
-
-  return toInsert.length + toUnhide.length;
 }
 
 /* ── RENDER GRID ────────────────────────────────────────────── */
@@ -249,7 +149,7 @@ function buildCard(student, day) {
   card.dataset.studentId = student.id;
   card.dataset.day = day;
 
-  /* header — only the ••• menu, no separate + button */
+  /* header */
   const hdr = document.createElement('div');
   hdr.className = 'card-header';
   hdr.style.background = bg;
@@ -275,7 +175,7 @@ function buildCard(student, day) {
   body.className = 'card-body';
 
   if (dayInstances.length === 0) {
-    body.innerHTML = `<div class="card-empty">No courses assigned.<br><small>Use <strong>•••</strong> → <strong>+ Add Course</strong> or <strong>📅 Plan Week</strong>.</small></div>`;
+    body.innerHTML = `<div class="card-empty">No courses assigned.<br><small>Use <strong>📅 Plan Week</strong> to assign courses.</small></div>`;
   } else {
     dayInstances.forEach(inst => {
       body.appendChild(buildCourseItem(card, student, day, inst));
@@ -303,8 +203,6 @@ function buildCourseItem(card, student, day, inst) {
       <input type="checkbox" id="${cbId}" ${inst.completed ? 'checked' : ''}>
       <span class="course-label">${escHtml(inst.label)}</span>
     </label>
-    <button class="btn-icon course-remove" type="button"
-      title="Hide on ${day}" aria-label="Hide ${escHtml(inst.label)} on ${day}">✕</button>
   `;
 
   item.querySelector('input').addEventListener('change', async ev => {
@@ -331,29 +229,7 @@ function buildCourseItem(card, student, day, inst) {
     updateSummaryStudent(student.id);
   });
 
-  item.querySelector('.course-remove').addEventListener('click', e => {
-    e.preventDefault();
-    e.stopPropagation();
-    hideInstanceOnDay(inst, student, day, card);
-  });
-
   return item;
-}
-
-/* Row ✕ — hides this course on this day only. The course definition
-   and the other days are untouched. */
-async function hideInstanceOnDay(inst, student, day, card) {
-  const { error } = await supabase
-    .from('week_instances')
-    .update({ hidden: true })
-    .eq('id', inst.id);
-
-  if (error) { console.error('hide instance:', error); toast('Failed to hide course'); return; }
-
-  inst.hidden = true;
-  card.replaceWith(buildCard(student, day));
-  updateSummaryStudent(student.id);
-  toast(`"${inst.label}" hidden on ${day}`);
 }
 
 /* ── PROGRESS BAR ───────────────────────────────────────────── */
@@ -428,10 +304,8 @@ function openCardMenu(btn, student, day) {
   const menu = document.createElement('div');
   menu.className = 'dropdown-menu dropdown-menu-portal';
   menu.innerHTML = `
-    <button class="dropdown-item" data-action="add-course">+  Add Course</button>
-    <button class="dropdown-item" data-action="edit-defaults">📚  Edit Default Courses</button>
-    <button class="dropdown-item" data-action="edit-name">✏️  Edit Name</button>
     <button class="dropdown-item" data-action="hide-day">🚫  Hide card this day</button>
+    <button class="dropdown-item" data-action="edit-name">✏️  Rename Student</button>
     <button class="dropdown-item danger" data-action="delete">🗑  Remove Student</button>
   `;
 
@@ -440,16 +314,6 @@ function openCardMenu(btn, student, day) {
   menu.style.top  = (rect.bottom + 4) + 'px';
   menu.style.right = (window.innerWidth - rect.right) + 'px';
   document.body.appendChild(menu);
-
-  menu.querySelector('[data-action="add-course"]').addEventListener('click', () => {
-    closeAllDropdowns();
-    openAddCourseModal(student, day);
-  });
-
-  menu.querySelector('[data-action="edit-defaults"]').addEventListener('click', () => {
-    closeAllDropdowns();
-    openDefaultsModal(student);
-  });
 
   menu.querySelector('[data-action="hide-day"]').addEventListener('click', async () => {
     closeAllDropdowns();
@@ -516,249 +380,6 @@ async function editStudentName(student) {
   student.name = name.trim();
   renderGrid();
   renderStudentList();
-}
-
-/* ── ADD COURSE MODAL ───────────────────────────────────────── */
-let _acStudent = null;
-let _acDay     = null;
-let _acSaving  = false;
-
-function openAddCourseModal(student, day) {
-  _acStudent = student;
-  _acDay     = day;
-
-  document.getElementById('ac-student-name').textContent = student.name;
-  document.getElementById('ac-name').value = '';
-
-  // Day pills — only the card's day starts selected
-  const picker = document.getElementById('ac-day-picker');
-  picker.innerHTML = '';
-  DAYS.forEach(d => {
-    const pill = document.createElement('label');
-    pill.className = 'day-pill';
-    pill.innerHTML = `
-      <input type="checkbox" value="${d}" ${d === day ? 'checked' : ''}>
-      <span>${d.slice(0,3)}</span>
-    `;
-    pill.querySelector('input').addEventListener('change', syncAcShortcuts);
-    picker.appendChild(pill);
-  });
-
-  syncAcShortcuts();
-  showModal('modal-add-course');
-  setTimeout(() => document.getElementById('ac-name').focus(), 60);
-}
-
-function acSelectedDays() {
-  return [...document.querySelectorAll('#ac-day-picker input:checked')].map(cb => cb.value);
-}
-
-function acSetDays(days) {
-  document.querySelectorAll('#ac-day-picker input').forEach(cb => {
-    cb.checked = days.includes(cb.value);
-  });
-  syncAcShortcuts();
-}
-
-/* Highlight a shortcut when the selection matches it exactly */
-function syncAcShortcuts() {
-  const sel = acSelectedDays();
-  document.getElementById('ac-just-day')
-    .classList.toggle('active', sel.length === 1 && sel[0] === _acDay);
-  document.getElementById('ac-all-week')
-    .classList.toggle('active', sel.length === DAYS.length);
-}
-
-document.getElementById('ac-just-day').addEventListener('click', () => acSetDays([_acDay]));
-document.getElementById('ac-all-week').addEventListener('click', () => acSetDays(DAYS));
-document.getElementById('ac-save').addEventListener('click', saveAddCourse);
-document.getElementById('ac-name').addEventListener('keydown', e => {
-  if (e.key === 'Enter') saveAddCourse();
-});
-
-async function saveAddCourse() {
-  if (_acSaving) return;
-
-  const nameEl = document.getElementById('ac-name');
-  const label  = nameEl.value.trim();
-  if (!label) { nameEl.focus(); return; }
-
-  const days = acSelectedDays();
-  if (days.length === 0) { toast('Pick at least one day'); return; }
-
-  _acSaving = true;
-  const saveBtn = document.getElementById('ac-save');
-  saveBtn.disabled = true;
-
-  try {
-    // Reuses an existing course with the same name (default or not);
-    // otherwise creates a non-default ("temp") course in the library.
-    const def     = await findOrCreateDef(_acStudent.id, label);
-    const changed = await ensureInstances(_acStudent.id, def, days);
-
-    closeModal('modal-add-course');
-    renderGrid();
-    toast(changed === 0
-      ? `"${def.label}" is already on those days`
-      : `"${def.label}" added for ${_acStudent.name}`);
-  } catch (err) {
-    console.error('add course:', err);
-    toast('Failed to add course — try again');
-  } finally {
-    _acSaving = false;
-    saveBtn.disabled = false;
-  }
-}
-
-/* ── DEFAULT COURSES MODAL ──────────────────────────────────── */
-let _defStudent = null;
-
-function openDefaultsModal(student) {
-  _defStudent = student;
-  document.getElementById('def-title').textContent = `${student.name} — Default Courses`;
-  renderDefaultsList();
-  showModal('modal-defaults');
-}
-
-function renderDefaultsList() {
-  const list = document.getElementById('def-list');
-  list.innerHTML = '';
-
-  const defs = defaultsFor(_defStudent.id);
-  if (defs.length === 0) {
-    list.innerHTML = '<p class="modal-empty">No courses yet.</p>';
-    return;
-  }
-  defs.forEach(def => list.appendChild(buildDefaultRow(def)));
-}
-
-function buildDefaultRow(def) {
-  const row = document.createElement('div');
-  row.className = 'course-editor-row';
-  row.innerHTML = `
-    <input class="input-inline" value="${escHtml(def.label)}" placeholder="Course name">
-    <button class="btn-icon" data-action="delete" title="Delete default course">🗑</button>
-  `;
-
-  const input = row.querySelector('input');
-  input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); });
-  input.addEventListener('blur', () => renameDefault(def, input));
-
-  row.querySelector('[data-action="delete"]').addEventListener('click', () => deleteDefault(def));
-  return row;
-}
-
-async function renameDefault(def, input) {
-  const label = input.value.trim();
-  if (!label || label === def.label) { input.value = def.label; return; }
-
-  const clash = findDefByLabel(def.student_id, label);
-  if (clash && clash.id !== def.id) {
-    toast(`"${clash.label}" already exists`);
-    input.value = def.label;
-    return;
-  }
-
-  const { error } = await supabase
-    .from('course_definitions')
-    .update({ label })
-    .eq('id', def.id);
-  if (error) { toast('Failed to rename course'); input.value = def.label; return; }
-
-  // Keep this week's rows in step with the new name
-  const { error: instErr } = await supabase
-    .from('week_instances')
-    .update({ label })
-    .eq('week_key', weekKey)
-    .eq('course_def_id', def.id);
-  if (instErr) console.error('rename instances:', instErr);
-
-  def.label = label;
-  instances.forEach(i => { if (i.course_def_id === def.id) i.label = label; });
-  renderGrid();
-  toast('Course renamed');
-}
-
-async function deleteDefault(def) {
-  if (!confirm(`Delete "${def.label}" from ${_defStudent.name}'s courses? It will also be removed from every day this week.`)) return;
-
-  const { error: instErr } = await supabase
-    .from('week_instances')
-    .delete()
-    .eq('week_key', weekKey)
-    .eq('student_id', def.student_id)
-    .eq('course_def_id', def.id);
-  if (instErr) { console.error('delete instances:', instErr); toast('Failed to delete course'); return; }
-
-  // Soft delete, same as the planner
-  const { error } = await supabase
-    .from('course_definitions')
-    .update({ active: false })
-    .eq('id', def.id);
-  if (error) { toast('Failed to delete course'); return; }
-
-  library   = library.filter(c => c.id !== def.id);
-  instances = instances.filter(i => i.course_def_id !== def.id);
-  renderDefaultsList();
-  renderGrid();
-  toast(`"${def.label}" deleted`);
-}
-
-/* "+ Add Course" in the defaults modal adds a blank row to type into */
-document.getElementById('def-add').addEventListener('click', () => {
-  const list  = document.getElementById('def-list');
-  const empty = list.querySelector('.modal-empty');
-  if (empty) empty.remove();
-
-  const row = document.createElement('div');
-  row.className = 'course-editor-row';
-  row.innerHTML = `
-    <input class="input-inline" placeholder="New course name">
-    <button class="btn-icon" data-action="cancel" title="Cancel">🗑</button>
-  `;
-  list.appendChild(row);
-
-  const input = row.querySelector('input');
-  let done = false;
-
-  const finish = async () => {
-    if (done) return;
-    done = true;
-    const label = input.value.trim();
-    if (!label) { row.remove(); if (!list.children.length) renderDefaultsList(); return; }
-    input.disabled = true;
-    await createDefault(_defStudent, label);
-    renderDefaultsList();
-  };
-
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter')  input.blur();
-    if (e.key === 'Escape') { input.value = ''; input.blur(); }
-  });
-  input.addEventListener('blur', finish);
-  row.querySelector('[data-action="cancel"]').addEventListener('mousedown', e => {
-    e.preventDefault();          // stop blur from saving first
-    input.value = '';
-    finish();
-  });
-
-  input.focus();
-});
-
-/* Adds the course to the student's library only. Days are assigned
-   in Plan Week or with + Add Course on a card. */
-async function createDefault(student, label) {
-  try {
-    if (findDefByLabel(student.id, label)) {
-      toast(`"${label}" is already in ${student.name}'s courses`);
-      return;
-    }
-    const def = await findOrCreateDef(student.id, label);
-    toast(`"${def.label}" added to ${student.name}'s courses`);
-  } catch (err) {
-    console.error('create default:', err);
-    toast('Failed to add course — try again');
-  }
 }
 
 /* ── SUMMARY STRIP ──────────────────────────────────────────── */
@@ -984,7 +605,6 @@ async function init() {
   updateWeekLabel();
 
   await loadStudents();
-  await loadLibrary();
   await loadInstances();
   await loadHiddenCards();
 
