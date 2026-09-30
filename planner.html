@@ -338,7 +338,8 @@ const PALETTE_H = ['#e8a040','#4a90d9','#3aaa60','#8a50d0','#d06060','#30a0b8'];
 let adminProfile = null;
 let students     = [];   // [{id, name, color_index}]
 let library      = {};   // studentId → [{id, label, active, repeating}]
-let instances    = {};   // studentId → {day → {courseDefId → instanceId|null}}
+let instances    = {};   // studentId → {day → {courseDefId → instanceId}}  (visible only)
+let hiddenInst   = {};   // studentId → {day → {courseDefId → instanceId}}  (hidden with ✕ on the tracker)
 let weekKey      = '';
 
 /* ── WEEK KEY ── */
@@ -399,15 +400,19 @@ async function loadInstances() {
     .in('student_id', students.map(s => s.id));
   if (error) { console.error(error); return; }
 
-  instances = {};
+  instances  = {};
+  hiddenInst = {};
   students.forEach(s => {
-    instances[s.id] = {};
-    DAYS.forEach(day => { instances[s.id][day] = {}; });
+    instances[s.id]  = {};
+    hiddenInst[s.id] = {};
+    DAYS.forEach(day => { instances[s.id][day] = {}; hiddenInst[s.id][day] = {}; });
   });
 
+  // A course hidden on the tracker shows as unchecked here
   (data || []).forEach(inst => {
-    if (instances[inst.student_id] && instances[inst.student_id][inst.day]) {
-      instances[inst.student_id][inst.day][inst.course_def_id] = inst.id;
+    const target = inst.hidden ? hiddenInst : instances;
+    if (target[inst.student_id] && target[inst.student_id][inst.day]) {
+      target[inst.student_id][inst.day][inst.course_def_id] = inst.id;
     }
   });
 }
@@ -521,42 +526,58 @@ function renderPlanner() {
   });
 }
 
-/* ── TOGGLE INSTANCE ── */
+/* ── TOGGLE INSTANCE ──
+   Checked   = course is on that day (visible row).
+   Unchecked = no row, or a hidden row. Unchecking hides the row instead of
+   deleting it, so it matches the tracker's ✕ and keeps any completion if
+   it's re-checked later. */
 async function toggleInstance(cb, studentId, course, day) {
   cb.classList.add('saving');
   cb.disabled = true;
 
-  const existingId = instances[studentId]?.[day]?.[course.id];
+  const visibleId = instances[studentId]?.[day]?.[course.id];
+  const hiddenId  = hiddenInst[studentId]?.[day]?.[course.id];
+
+  const fail = (msg, err) => {
+    console.error(msg, err);
+    cb.checked = !cb.checked;
+    cb.classList.remove('saving');
+    cb.disabled = false;
+    toast('Failed to save — try again');
+  };
 
   if (cb.checked) {
-    // Create instance
-    const { data, error } = await supabase
-      .from('week_instances')
-      .insert({
-        week_key      : weekKey,
-        student_id    : studentId,
-        course_def_id : course.id,
-        label         : course.label,
-        day           : day,
-        completed     : false,
-        hidden        : false,
-      })
-      .select()
-      .single();
+    if (hiddenId) {
+      // Un-hide the existing row
+      const { error } = await supabase
+        .from('week_instances')
+        .update({ hidden: false })
+        .eq('id', hiddenId);
+      if (error) return fail('unhide error:', error);
 
-    if (error) {
-      console.error('insert error:', error);
-      cb.checked = false;
-      cb.classList.remove('saving');
-      cb.disabled = false;
-      toast('Failed to save — try again');
-      return;
+      delete hiddenInst[studentId][day][course.id];
+      instances[studentId][day][course.id] = hiddenId;
+    } else {
+      // Create a new row
+      const { data, error } = await supabase
+        .from('week_instances')
+        .insert({
+          week_key      : weekKey,
+          student_id    : studentId,
+          course_def_id : course.id,
+          label         : course.label,
+          day           : day,
+          completed     : false,
+          hidden        : false,
+        })
+        .select()
+        .single();
+      if (error) return fail('insert error:', error);
+
+      instances[studentId][day][course.id] = data.id;
     }
-
-    instances[studentId][day][course.id] = data.id;
   } else {
-    // Delete instance
-    if (!existingId) {
+    if (!visibleId) {
       cb.classList.remove('saving');
       cb.disabled = false;
       return;
@@ -564,19 +585,12 @@ async function toggleInstance(cb, studentId, course, day) {
 
     const { error } = await supabase
       .from('week_instances')
-      .delete()
-      .eq('id', existingId);
-
-    if (error) {
-      console.error('delete error:', error);
-      cb.checked = true;
-      cb.classList.remove('saving');
-      cb.disabled = false;
-      toast('Failed to remove — try again');
-      return;
-    }
+      .update({ hidden: true })
+      .eq('id', visibleId);
+    if (error) return fail('hide error:', error);
 
     delete instances[studentId][day][course.id];
+    hiddenInst[studentId][day][course.id] = visibleId;
   }
 
   cb.classList.remove('saving');
@@ -588,7 +602,7 @@ async function toggleInstance(cb, studentId, course, day) {
 
 /* ── REMOVE COURSE FROM LIBRARY ── */
 async function removeCourseFromLibrary(course, student) {
-  // Check if it has any instances this week
+  // Check if it's on any day this week
   const hasInstances = DAYS.some(day => instances[student.id]?.[day]?.[course.id]);
 
   const msg = hasInstances
@@ -597,15 +611,13 @@ async function removeCourseFromLibrary(course, student) {
 
   if (!confirm(msg)) return;
 
-  // Delete all week instances for this course if any
-  if (hasInstances) {
-    await supabase
-      .from('week_instances')
-      .delete()
-      .eq('week_key', weekKey)
-      .eq('student_id', student.id)
-      .eq('course_def_id', course.id);
-  }
+  // Delete this week's rows for this course, visible or hidden
+  await supabase
+    .from('week_instances')
+    .delete()
+    .eq('week_key', weekKey)
+    .eq('student_id', student.id)
+    .eq('course_def_id', course.id);
 
   // Deactivate the course definition (soft delete)
   const { error } = await supabase
@@ -617,7 +629,10 @@ async function removeCourseFromLibrary(course, student) {
 
   // Update local state and re-render
   library[student.id] = library[student.id].filter(c => c.id !== course.id);
-  DAYS.forEach(day => { delete instances[student.id][day][course.id]; });
+  DAYS.forEach(day => {
+    delete instances[student.id][day][course.id];
+    delete hiddenInst[student.id][day][course.id];
+  });
 
   renderPlanner();
   toast(`"${course.label}" removed from library`);
