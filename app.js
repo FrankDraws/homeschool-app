@@ -6,6 +6,8 @@
 import { supabase }                              from './supabase.js';
 import { requireAdmin, logout }                  from './auth.js';
 import { autoExportOnCloseWeek, checkPeriodicExport } from './export.js';
+import { addWeeks, weekLabel, isCalendarWeek,
+         resolveActiveWeekKey, weekKeyFromURL } from './week.js';
 
 /* ── CONSTANTS ─────────────────────────────────────────────── */
 const DAYS      = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
@@ -21,25 +23,10 @@ let hiddenCards  = {};   // studentId → [day,...]
 let weekKey      = '';
 
 /* ── WEEK KEY ───────────────────────────────────────────────── */
-function getWeekKey(date = new Date()) {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  d.setDate(diff);
-  const y  = d.getFullYear();
-  const m  = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${dd}`;
-}
-
-function weekLabel(key) {
-  const mon = new Date(key + 'T00:00:00');
-  const fri = new Date(mon); fri.setDate(mon.getDate() + 4);
-  const fmt = d => d.toLocaleDateString('en-US', { month:'short', day:'numeric' });
-  return `${fmt(mon)} – ${fmt(fri)}, ${fri.getFullYear()}`;
-}
+/* getWeekKey / addWeeks / weekLabel now live in week.js */
 
 function isDayToday(di) {
+  if (!isCalendarWeek(weekKey)) return false;   // viewing a future week
   const js = new Date().getDay();
   return js >= 1 && js <= 5 && (js - 1) === di;
 }
@@ -936,10 +923,9 @@ document.getElementById('btn-close-week').addEventListener('click', async () => 
   // Auto-export JSON backup
   autoExportOnCloseWeek(weekLabel(weekKey));
 
-  // Advance to next week
-  const nextMon = new Date(weekKey + 'T00:00:00');
-  nextMon.setDate(nextMon.getDate() + 7);
-  weekKey = getWeekKey(nextMon);
+  // Advance to next week (init() will land here too on reload,
+  // because resolveActiveWeekKey() skips archived weeks)
+  weekKey = addWeeks(weekKey, 1);
 
   // Reload
   await loadInstances();
@@ -980,7 +966,7 @@ async function init() {
   adminProfile = await requireAdmin();
   if (!adminProfile) return;
 
-  weekKey = getWeekKey();
+  weekKey = weekKeyFromURL() || await resolveActiveWeekKey();
   updateWeekLabel();
 
   await loadStudents();
