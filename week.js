@@ -66,5 +66,7 @@ export async function resolveActiveWeekKey() {
 export function weekKeyFromURL() {
   const raw = new URLSearchParams(location.search).get('week');
   if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
-  return getWeekKey(new Date(raw + 'T00:00:00')); // snap to Monday
+  const d = new Date(raw + 'T00:00:00');
+  if (isNaN(d)) return null;                      // e.g. 2026-13-45
+  return getWeekKey(d);                           // snap to Monday
 }

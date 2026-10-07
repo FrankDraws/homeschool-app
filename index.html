@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=Nunito+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <style>
+  .hidden { display: none !important; }
   /* ── Tracker-page modal extras ── */
   .modal-note {
     font-size: 0.82rem;
@@ -27,6 +28,26 @@
   #ac-name { width: 100%; margin-bottom: 18px; }
 
   .course-item .course-remove:hover { color: var(--danger); }
+
+  /* ── Viewing a week other than the current one ── */
+  .week-banner {
+    max-width: 640px;
+    margin: 0 auto 12px;
+    padding: 10px 16px;
+    border-radius: var(--radius-lg);
+    background: var(--warn-light);
+    color: var(--warn);
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-align: center;
+  }
+  .week-banner a { color: inherit; font-weight: 800; }
+
+  /* Closed (archived) week: view only */
+  .read-only .card-actions,
+  .read-only .course-remove,
+  .read-only .card-restore-btn { display: none !important; }
+  .read-only .course-item input { cursor: default; }
 
   /* Touch screens (iPad, phone) have no hover — keep the
      ••• menu and row ✕ visible there. */
@@ -56,12 +77,15 @@
     </div>
     <div class="header-right">
       <a href="archive.html" class="btn btn-ghost">📋 Archive</a>
-      <a href="planner.html" class="btn btn-ghost">📅 Plan Week</a>
+      <a href="planner.html" id="link-planner" class="btn btn-ghost">📅 Plan Week</a>
       <button class="btn btn-ghost" id="btn-manage">⚙ Manage Students</button>
       <button class="btn btn-primary" id="btn-close-week">Close Week</button>
       <button class="btn btn-ghost" id="btn-logout">Sign Out</button>
     </div>
   </header>
+
+  <!-- NOT-THE-CURRENT-WEEK BANNER (filled by JS) -->
+  <div class="week-banner hidden" id="week-banner"></div>
 
   <!-- SUMMARY STRIP -->
   <div class="summary-strip" id="summary-strip"><!-- built by JS --></div>

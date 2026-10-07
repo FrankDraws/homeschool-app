@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800&family=Nunito+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <style>
+  .hidden { display: none !important; }
   /* ── PLANNER-SPECIFIC STYLES ── */
   .planner-main {
     padding: 24px 28px 48px;
@@ -258,6 +259,71 @@
     line-height: 1.5;
   }
 
+  /* ── WEEK NAVIGATION ── */
+  .week-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+
+  .week-nav-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1.5px solid var(--border);
+    background: var(--surface);
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: all var(--transition);
+  }
+  .week-nav-btn:hover {
+    background: var(--accent-light);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .week-nav-title {
+    font-family: var(--font-display);
+    font-size: 1rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    min-width: 190px;
+    text-align: center;
+  }
+
+  .week-nav-tag {
+    font-family: var(--font-display);
+    font-size: 0.68rem;
+    font-weight: 800;
+    padding: 3px 8px;
+    border-radius: 99px;
+    background: var(--surface-2);
+    color: var(--text-muted);
+  }
+  .week-nav-tag.closed   { background: var(--warn-light);   color: var(--warn); }
+  .week-nav-tag.upcoming { background: var(--accent-light); color: var(--accent); }
+
+  .week-nav-today { margin-left: auto; }
+
+  /* ── CLOSED (READ-ONLY) WEEK ── */
+  .closed-banner {
+    background: var(--warn-light);
+    color: var(--warn);
+    border-radius: var(--radius-lg);
+    padding: 10px 16px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    margin-bottom: 20px;
+  }
+
+  .read-only .planner-checkbox { cursor: default; opacity: 0.65; }
+  .read-only .planner-checkbox:hover { border-color: var(--border); }
+  .read-only .btn-add-temp,
+  .read-only .btn-remove-course { display: none; }
+
   /* ── LOADING ── */
   .planner-loading {
     text-align: center;
@@ -273,7 +339,7 @@
   <!-- HEADER -->
   <header class="app-header">
     <div class="header-left">
-      <a href="index.html" class="btn btn-ghost" style="font-size:0.82rem;padding:6px 12px">‹ Tracker</a>
+      <a href="index.html" id="link-tracker" class="btn btn-ghost" style="font-size:0.82rem;padding:6px 12px">‹ Tracker</a>
       <div class="app-logo">
         <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
           <rect width="28" height="28" rx="8" fill="var(--accent)"/>
@@ -293,6 +359,16 @@
 
   <!-- MAIN -->
   <main class="planner-main">
+    <div class="week-nav">
+      <button class="week-nav-btn" id="wk-prev" type="button" title="Previous week" aria-label="Previous week">‹</button>
+      <span class="week-nav-title" id="wk-title">…</span>
+      <button class="week-nav-btn" id="wk-next" type="button" title="Next week" aria-label="Next week">›</button>
+      <span class="week-nav-tag hidden" id="wk-tag"></span>
+      <button class="btn btn-ghost btn-sm week-nav-today hidden" id="wk-today" type="button">Back to current week</button>
+    </div>
+    <div class="closed-banner hidden" id="closed-banner">
+      This week is closed and archived. It's shown for reference only — changes are turned off.
+    </div>
     <div id="planner-body">
       <div class="planner-loading">Loading planner…</div>
     </div>
@@ -328,6 +404,8 @@
 <script type="module">
 import { supabase }            from './supabase.js';
 import { requireAdmin, logout } from './auth.js';
+import { addWeeks, weekLabel, isCalendarWeek, isWeekClosed,
+         resolveActiveWeekKey, weekKeyFromURL } from './week.js';
 
 /* ── CONSTANTS ── */
 const DAYS      = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
@@ -340,28 +418,15 @@ let students     = [];   // [{id, name, color_index}]
 let library      = {};   // studentId → [{id, label, active, repeating}]
 let instances    = {};   // studentId → {day → {courseDefId → instanceId}}  (visible only)
 let hiddenInst   = {};   // studentId → {day → {courseDefId → instanceId}}  (hidden with ✕ on the tracker)
-let weekKey      = '';
+let weekKey      = '';   // the week being shown
+let activeKey    = '';   // the week the household is working on (first unclosed)
+let readOnly     = false; // true when weekKey is already archived
 
 /* ── WEEK KEY ── */
-function getWeekKey(date = new Date()) {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  d.setDate(diff);
-  const y  = d.getFullYear();
-  const m  = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${dd}`;
-}
-
-function weekLabel(key) {
-  const mon = new Date(key + 'T00:00:00');
-  const fri = new Date(mon); fri.setDate(mon.getDate() + 4);
-  const fmt = d => d.toLocaleDateString('en-US', { month:'short', day:'numeric' });
-  return `${fmt(mon)} – ${fmt(fri)}, ${fri.getFullYear()}`;
-}
+/* getWeekKey / addWeeks / weekLabel live in week.js */
 
 function isDayToday(day) {
+  if (!isCalendarWeek(weekKey)) return false;   // not this calendar week
   const js = new Date().getDay();
   return js >= 1 && js <= 5 && DAYS[js - 1] === day;
 }
@@ -506,6 +571,7 @@ function renderPlanner() {
           cb.className = 'planner-checkbox';
           const isAssigned = !!(instances[student.id]?.[day]?.[course.id]);
           cb.checked = isAssigned;
+          cb.disabled = readOnly;
 
           cb.addEventListener('change', async () => {
             await toggleInstance(cb, student.id, course, day);
@@ -532,6 +598,7 @@ function renderPlanner() {
    deleting it, so it matches the tracker's ✕ and keeps any completion if
    it's re-checked later. */
 async function toggleInstance(cb, studentId, course, day) {
+  if (readOnly) { cb.checked = !cb.checked; return; }   // safety net
   cb.classList.add('saving');
   cb.disabled = true;
 
@@ -602,6 +669,7 @@ async function toggleInstance(cb, studentId, course, day) {
 
 /* ── REMOVE COURSE FROM LIBRARY ── */
 async function removeCourseFromLibrary(course, student) {
+  if (readOnly) return;
   // Check if it's on any day this week
   const hasInstances = DAYS.some(day => instances[student.id]?.[day]?.[course.id]);
 
@@ -723,16 +791,58 @@ async function init() {
   adminProfile = await requireAdmin();
   if (!adminProfile) return;
 
-  weekKey = getWeekKey();
-  document.getElementById('week-label').textContent = 'Week of ' + weekLabel(weekKey);
+  activeKey = await resolveActiveWeekKey();
 
   await loadStudents();
   await loadLibrary();
-  await loadInstances();
+  await showWeek(weekKeyFromURL() || activeKey);
 
-  renderPlanner();
-
+  document.getElementById('wk-prev').addEventListener('click', () => showWeek(addWeeks(weekKey, -1)));
+  document.getElementById('wk-next').addEventListener('click', () => showWeek(addWeeks(weekKey,  1)));
+  document.getElementById('wk-today').addEventListener('click', () => showWeek(activeKey));
   document.getElementById('btn-logout').addEventListener('click', logout);
+}
+
+/* ── SWITCH WEEK ──
+   Loads one week's assignments and redraws. Closed (archived)
+   weeks are shown read-only. */
+let _loadingWeek = false;
+async function showWeek(key) {
+  if (_loadingWeek) return;
+  _loadingWeek = true;
+
+  weekKey  = key;
+  readOnly = await isWeekClosed(key);
+
+  // Keep the URL in step so a refresh stays on this week
+  const url = new URL(location.href);
+  if (key === activeKey) url.searchParams.delete('week');
+  else url.searchParams.set('week', key);
+  history.replaceState(null, '', url);
+
+  // "‹ Tracker" opens the tracker on the same week
+  document.getElementById('link-tracker').href =
+    key === activeKey ? 'index.html' : `index.html?week=${key}`;
+
+  // Labels
+  const label = weekLabel(key);
+  document.getElementById('week-label').textContent = 'Week of ' + label;
+  document.getElementById('wk-title').textContent   = label;
+
+  const tag = document.getElementById('wk-tag');
+  tag.className = 'week-nav-tag';
+  if (readOnly)              { tag.textContent = 'Closed';   tag.classList.add('closed'); }
+  else if (key > activeKey)  { tag.textContent = 'Upcoming'; tag.classList.add('upcoming'); }
+  else if (key < activeKey)  { tag.textContent = 'Past';     }
+  else                       { tag.textContent = 'Current';  }
+
+  document.getElementById('wk-today').classList.toggle('hidden', key === activeKey);
+  document.getElementById('closed-banner').classList.toggle('hidden', !readOnly);
+  document.getElementById('planner-body').classList.toggle('read-only', readOnly);
+
+  await loadInstances();
+  renderPlanner();
+  _loadingWeek = false;
 }
 
 init();

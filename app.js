@@ -6,7 +6,7 @@
 import { supabase }                              from './supabase.js';
 import { requireAdmin, logout }                  from './auth.js';
 import { autoExportOnCloseWeek, checkPeriodicExport } from './export.js';
-import { addWeeks, weekLabel, isCalendarWeek,
+import { addWeeks, weekLabel, isCalendarWeek, isWeekClosed,
          resolveActiveWeekKey, weekKeyFromURL } from './week.js';
 
 /* ── CONSTANTS ─────────────────────────────────────────────── */
@@ -20,7 +20,9 @@ let students     = [];   // [{id, name, color_index}]
 let library      = [];   // active course_definitions rows for all students
 let instances    = [];   // all week_instance rows for current week
 let hiddenCards  = {};   // studentId → [day,...]
-let weekKey      = '';
+let weekKey      = '';   // the week being shown
+let activeKey    = '';   // the week the household is working on (first unclosed)
+let readOnly     = false; // true when weekKey is already archived
 
 /* ── WEEK KEY ───────────────────────────────────────────────── */
 /* getWeekKey / addWeeks / weekLabel now live in week.js */
@@ -287,7 +289,7 @@ function buildCourseItem(card, student, day, inst) {
   const cbId = `cb-${inst.id}`;
   item.innerHTML = `
     <label for="${cbId}">
-      <input type="checkbox" id="${cbId}" ${inst.completed ? 'checked' : ''}>
+      <input type="checkbox" id="${cbId}" ${inst.completed ? 'checked' : ''} ${readOnly ? 'disabled' : ''}>
       <span class="course-label">${escHtml(inst.label)}</span>
     </label>
     <button class="btn-icon course-remove" type="button"
@@ -878,6 +880,8 @@ function renderStudentList() {
 
 /* ── CLOSE WEEK ─────────────────────────────────────────────── */
 document.getElementById('btn-close-week').addEventListener('click', async () => {
+  // Only the current week can be closed — never a future or archived one
+  if (weekKey !== activeKey || readOnly) return;
   if (!confirm(`Archive the week of ${weekLabel(weekKey)}?`)) return;
 
   // Insert archive_week row
@@ -923,9 +927,11 @@ document.getElementById('btn-close-week').addEventListener('click', async () => 
   // Auto-export JSON backup
   autoExportOnCloseWeek(weekLabel(weekKey));
 
-  // Advance to next week (init() will land here too on reload,
-  // because resolveActiveWeekKey() skips archived weeks)
-  weekKey = addWeeks(weekKey, 1);
+  // Advance to next week (a reload lands here too, because
+  // resolveActiveWeekKey() skips archived weeks)
+  activeKey = addWeeks(weekKey, 1);
+  weekKey   = activeKey;
+  readOnly  = false;
 
   // Reload
   await loadInstances();
@@ -959,6 +965,29 @@ function toast(msg) {
 /* ── WEEK LABEL ─────────────────────────────────────────────── */
 function updateWeekLabel() {
   document.getElementById('week-label').textContent = 'Week of ' + weekLabel(weekKey);
+
+  const isActive = weekKey === activeKey;
+
+  // Plan Week opens the planner on the same week
+  document.getElementById('link-planner').href =
+    isActive ? 'planner.html' : `planner.html?week=${weekKey}`;
+
+  // Close Week only makes sense on the current week
+  document.getElementById('btn-close-week').classList.toggle('hidden', !isActive);
+
+  // Closed weeks are view-only
+  document.getElementById('week-grid').classList.toggle('read-only', readOnly);
+
+  // Banner when looking at any week other than the current one
+  const banner = document.getElementById('week-banner');
+  if (isActive) {
+    banner.classList.add('hidden');
+  } else {
+    const what = readOnly ? 'a closed week (view only)'
+               : weekKey > activeKey ? 'an upcoming week' : 'a past week';
+    banner.innerHTML = `You're viewing ${what}. <a href="index.html">Back to current week</a>`;
+    banner.classList.remove('hidden');
+  }
 }
 
 /* ── INIT ───────────────────────────────────────────────────── */
@@ -966,7 +995,9 @@ async function init() {
   adminProfile = await requireAdmin();
   if (!adminProfile) return;
 
-  weekKey = weekKeyFromURL() || await resolveActiveWeekKey();
+  activeKey = await resolveActiveWeekKey();
+  weekKey   = weekKeyFromURL() || activeKey;
+  readOnly  = weekKey !== activeKey && await isWeekClosed(weekKey);
   updateWeekLabel();
 
   await loadStudents();
