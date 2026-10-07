@@ -65,6 +65,8 @@
 
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  .hidden { display: none !important; }
+
   #app { display: none; }
   #app.ready { display: block; }
 
@@ -360,6 +362,38 @@
     opacity: 0.4;
   }
 
+  /* ── DAY OFF ── */
+  :root {
+    --off:       #6a66a3;
+    --off-light: #efeef7;
+  }
+
+  .day-tab.off .day-tab-fraction { color: var(--off); }
+  .day-tab.off .day-tab-name     { color: var(--faint); }
+  .day-tab.off.active            { border-bottom-color: var(--off); }
+  .day-tab.off.active .day-tab-name { color: var(--off); }
+
+  .day-off-panel {
+    background: var(--off-light);
+    color: var(--off);
+    border-radius: var(--radius);
+    padding: 32px 24px;
+    text-align: center;
+  }
+  .day-off-icon  { font-size: 2rem; margin-bottom: 8px; }
+  .day-off-title {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 800;
+  }
+  .day-off-reason {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-top: 6px;
+    line-height: 1.5;
+    word-break: break-word;
+  }
+
   /* ── ALL DONE STATE ── */
   .all-done {
     text-align: center;
@@ -420,6 +454,7 @@ let profile     = null;
 let weekKey     = '';
 let activeDay   = '';
 let instances   = [];  // all week_instances rows for this student this week
+let breaks      = [];  // days off touching this week (this student's + all-students)
 
 /* ── WEEK KEY ── */
 function getWeekKey(date = new Date()) {
@@ -455,6 +490,35 @@ async function loadInstances() {
   instances = data || [];
 }
 
+/* ── LOAD DAYS OFF ──
+   Row-level security only returns this student's own days off
+   and all-students days off, so no student filter is needed. */
+async function loadBreaks() {
+  const { data, error } = await supabase
+    .from('breaks')
+    .select('*')
+    .lte('start_date', dateForDay('Friday'))
+    .gte('end_date',   dateForDay('Monday'));
+  if (error) { console.error('loadBreaks error:', error); breaks = []; return; }
+  breaks = data || [];
+}
+
+/* 'Tuesday' in week '2026-10-05' → '2026-10-06' */
+function dateForDay(day) {
+  const d = new Date(weekKey + 'T00:00:00');
+  d.setDate(d.getDate() + DAYS.indexOf(day));
+  const y  = d.getFullYear();
+  const m  = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
+/* The break that makes this day a day off, or null */
+function offBreak(day) {
+  const date = dateForDay(day);
+  return breaks.find(b => b.start_date <= date && b.end_date >= date) || null;
+}
+
 /* ── INSTANCES FOR A DAY ── */
 function instancesForDay(day) {
   return instances.filter(i => i.day === day);
@@ -468,9 +532,11 @@ function statsForDay(day) {
   return { total, done, pct: total === 0 ? 0 : Math.round((done / total) * 100) };
 }
 
+/* Days off don't count toward the week */
 function statsForWeek() {
-  const total = instances.length;
-  const done  = instances.filter(r => r.completed).length;
+  const rows  = instances.filter(i => !offBreak(i.day));
+  const total = rows.length;
+  const done  = rows.filter(r => r.completed).length;
   return { total, done, pct: total === 0 ? 0 : Math.round((done / total) * 100) };
 }
 
@@ -487,14 +553,16 @@ function renderTabs() {
     const { done, total } = statsForDay(day);
     const isToday  = day === getTodayName();
     const isActive = day === activeDay;
+    const isOff    = !!offBreak(day);
     const tab = document.createElement('button');
     tab.className = 'day-tab' +
       (isToday  ? ' today'  : '') +
-      (isActive ? ' active' : '');
+      (isActive ? ' active' : '') +
+      (isOff    ? ' off'    : '');
     tab.innerHTML = `
       <div class="day-tab-dot"></div>
       <div class="day-tab-name">${day.slice(0,3)}</div>
-      <div class="day-tab-fraction">${done}/${total}</div>
+      <div class="day-tab-fraction">${isOff ? '🌙 Off' : `${done}/${total}`}</div>
     `;
     tab.addEventListener('click', () => {
       activeDay = day;
@@ -507,6 +575,28 @@ function renderTabs() {
 
 /* ── RENDER DAY VIEW ── */
 function renderDayView() {
+  // Weekly pill (days off excluded)
+  const ws  = statsForWeek();
+  const wpill = document.getElementById('weekly-pill');
+  wpill.textContent = `${ws.done}/${ws.total} this week`;
+  wpill.className   = 'weekly-pill' + (ws.pct >= 80 ? '' : ws.pct >= 40 ? ' warn' : ' low');
+
+  // Day off: no progress bar, no courses — just the day-off panel
+  const off      = offBreak(activeDay);
+  const progress = document.getElementById('day-progress-block');
+  const list     = document.getElementById('course-list');
+  progress.classList.toggle('hidden', !!off);
+
+  if (off) {
+    list.innerHTML = `
+      <div class="day-off-panel">
+        <div class="day-off-icon">🌙</div>
+        <div class="day-off-title">Day off</div>
+        ${off.reason ? `<div class="day-off-reason">${escHtml(off.reason)}</div>` : ''}
+      </div>`;
+    return;
+  }
+
   const { done, total, pct } = statsForDay(activeDay);
   const cls = pillClass(pct);
 
@@ -520,14 +610,7 @@ function renderDayView() {
   pctEl.className   = 'day-progress-pct' + (cls ? ' ' + cls : '');
   label.textContent = activeDay === getTodayName() ? 'Today' : activeDay;
 
-  // Weekly pill
-  const ws  = statsForWeek();
-  const wpill = document.getElementById('weekly-pill');
-  wpill.textContent = `${ws.done}/${ws.total} this week`;
-  wpill.className   = 'weekly-pill' + (ws.pct >= 80 ? '' : ws.pct >= 40 ? ' warn' : ' low');
-
   // Course list
-  const list = document.getElementById('course-list');
   list.innerHTML = '';
 
   const rows = instancesForDay(activeDay);
@@ -628,7 +711,7 @@ async function init() {
   document.getElementById('header-date').textContent = formatDate();
 
   // Load data
-  await loadInstances();
+  await Promise.all([loadInstances(), loadBreaks()]);
 
   // Render
   renderTabs();
