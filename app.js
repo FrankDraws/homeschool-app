@@ -19,7 +19,8 @@ let adminProfile = null;
 let students     = [];   // [{id, name, color_index}]
 let library      = [];   // active course_definitions rows for all students
 let instances    = [];   // all week_instance rows for current week
-let hiddenCards  = {};   // studentId → [day,...]
+let notes        = {};   // 'studentId|day' → day_notes row
+let breaks       = [];   // breaks rows overlapping the current week
 let weekKey      = '';   // the week being shown
 let activeKey    = '';   // the week the household is working on (first unclosed)
 let readOnly     = false; // true when weekKey is already archived
@@ -77,21 +78,60 @@ async function loadInstances() {
   instances = data || [];
 }
 
-async function loadHiddenCards() {
+async function loadNotes() {
+  notes = {};
   if (students.length === 0) return;
   const { data, error } = await supabase
-    .from('week_cards')
+    .from('day_notes')
     .select('*')
     .eq('week_key', weekKey)
-    .eq('hidden', true)
     .in('student_id', students.map(s => s.id));
-  if (error) { console.error('loadHiddenCards:', error); return; }
+  if (error) { console.error('loadNotes:', error); return; }
+  (data || []).forEach(n => { notes[`${n.student_id}|${n.day}`] = n; });
+}
 
-  hiddenCards = {};
-  students.forEach(s => { hiddenCards[s.id] = []; });
-  (data || []).forEach(row => {
-    if (hiddenCards[row.student_id]) hiddenCards[row.student_id].push(row.day);
-  });
+/* Any break that touches Mon–Fri of this week */
+async function loadBreaks() {
+  const { data, error } = await supabase
+    .from('breaks')
+    .select('*')
+    .lte('start_date', dateForDay('Friday'))
+    .gte('end_date',   dateForDay('Monday'));
+  if (error) { console.error('loadBreaks:', error); breaks = []; return; }
+  breaks = data || [];
+}
+
+/* ── DATE HELPERS ───────────────────────────────────────────── */
+/* 'Tuesday' in week '2026-10-05' → '2026-10-06' */
+function dateForDay(day) {
+  const d = new Date(weekKey + 'T00:00:00');
+  d.setDate(d.getDate() + DAYS.indexOf(day));
+  const y  = d.getFullYear();
+  const m  = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
+/* ── DAY-OFF HELPERS ────────────────────────────────────────── */
+/* All-students break covering this day, or null */
+function allOffBreak(day) {
+  const date = dateForDay(day);
+  return breaks.find(b => b.student_id === null &&
+    b.start_date <= date && b.end_date >= date) || null;
+}
+
+/* The break that takes this student off this day, or null.
+   An all-students break wins over a single-student one. */
+function offBreakFor(studentId, day) {
+  const all = allOffBreak(day);
+  if (all) return all;
+  const date = dateForDay(day);
+  return breaks.find(b => b.student_id === studentId &&
+    b.start_date <= date && b.end_date >= date) || null;
+}
+
+function isOff(studentId, day) {
+  return !!offBreakFor(studentId, day);
 }
 
 /* ── INSTANCE HELPERS ───────────────────────────────────────── */
@@ -103,8 +143,15 @@ function instancesForStudentDay(studentId, day) {
   );
 }
 
-function isCardHidden(studentId, day) {
-  return (hiddenCards[studentId] || []).includes(day);
+/* Rows that count toward totals: visible and not on a day off */
+function countedInstances(studentId) {
+  return instances.filter(i =>
+    i.student_id === studentId && !i.hidden && !isOff(studentId, i.day)
+  );
+}
+
+function noteFor(studentId, day) {
+  return notes[`${studentId}|${day}`] || null;
 }
 
 /* ── COURSE LIBRARY HELPERS ─────────────────────────────────── */
@@ -208,15 +255,17 @@ function renderGrid() {
     hdr.textContent = day;
     col.appendChild(hdr);
 
+    const allOff = allOffBreak(day);
+    if (allOff) col.appendChild(buildDayOffBanner(allOff));
+
     const cards = document.createElement('div');
     cards.className = 'day-cards';
 
     students.forEach(student => {
-      if (isCardHidden(student.id, day)) {
-        cards.appendChild(buildHiddenPlaceholder(student, day));
-      } else {
-        cards.appendChild(buildCard(student, day));
-      }
+      const off = offBreakFor(student.id, day);
+      cards.appendChild(off
+        ? buildOffCard(student, day, off, !!allOff)
+        : buildCard(student, day));
     });
 
     col.appendChild(cards);
@@ -276,6 +325,19 @@ function buildCard(student, day) {
   /* progress bar */
   if (dayInstances.length > 0) {
     card.appendChild(buildProgressBar(dayInstances));
+  }
+
+  /* note callout */
+  const note = noteFor(student.id, day);
+  if (note) {
+    const n = document.createElement('div');
+    n.className = 'card-note';
+    n.innerHTML = `<span class="card-note-icon">📝</span><span>${escHtml(note.note)}</span>`;
+    if (!readOnly) {
+      n.title = 'Edit note';
+      n.addEventListener('click', () => openNoteModal(student, day));
+    }
+    card.appendChild(n);
   }
 
   return card;
@@ -371,43 +433,67 @@ function refreshProgressBar(progEl, dayInstances) {
   if (lbl)  lbl.textContent  = `${done}/${total}`;
 }
 
-/* ── HIDDEN CARD PLACEHOLDER ────────────────────────────────── */
-function buildHiddenPlaceholder(student, day) {
-  const bg     = PALETTE[student.color_index % PALETTE.length];
-  const accent = PALETTE_H[student.color_index % PALETTE_H.length];
+/* ── DAY OFF: BANNER (all students) ─────────────────────────── */
+function buildDayOffBanner(brk) {
+  const el = document.createElement('div');
+  el.className = 'day-off-banner';
+  el.innerHTML = `
+    <div class="day-off-banner-top">
+      <span class="day-off-tag">🌙 Day off · all students</span>
+      <button class="btn-icon day-off-remove" title="Remove day off">↩</button>
+    </div>
+    ${brk.reason ? `<div class="day-off-reason">${escHtml(brk.reason)}</div>` : ''}
+  `;
+  el.querySelector('.day-off-remove').addEventListener('click', () => removeBreak(brk));
+  return el;
+}
+
+/* ── DAY OFF: COLLAPSED CARD ────────────────────────────────── */
+/* underBanner = the banner above already gives the reason,
+   so the card just says "Off". */
+function buildOffCard(student, day, brk, underBanner) {
   const initials = student.name.trim().split(/\s+/).map(w=>w[0]).join('').toUpperCase().slice(0,2);
 
-  const wrap = document.createElement('div');
-  wrap.className = 'student-card card-hidden-day';
+  const card = document.createElement('div');
+  card.className = 'student-card card-off';
 
-  wrap.innerHTML = `
-    <div class="card-header card-header-muted" style="background:${bg}88">
+  const showReason = !underBanner && brk.reason;
+  card.innerHTML = `
+    <div class="card-header card-header-off">
       <div class="card-header-left">
-        <div class="card-avatar" style="color:${accent}88">${initials}</div>
-        <span class="card-name" style="color:${accent}88">${escHtml(student.name)}</span>
+        <div class="card-avatar">${initials}</div>
+        <span class="card-name">${escHtml(student.name)}</span>
       </div>
-      <button class="btn-icon card-restore-btn" title="Restore card for this day">↩</button>
+      ${underBanner ? '' : '<button class="btn-icon card-restore-btn" title="Remove day off">↩</button>'}
     </div>
-    <div class="card-body card-hidden-msg">No school this day</div>
+    ${showReason
+      ? `<div class="card-off-reason"><span class="day-off-tag">🌙 Day off</span>${escHtml(brk.reason)}</div>`
+      : `<div class="card-off-msg">🌙 Off</div>`}
   `;
 
-  wrap.querySelector('.card-restore-btn').addEventListener('click', async () => {
-    const { error } = await supabase
-      .from('week_cards')
-      .update({ hidden: false })
-      .eq('week_key', weekKey)
-      .eq('student_id', student.id)
-      .eq('day', day);
+  const restore = card.querySelector('.card-restore-btn');
+  if (restore) restore.addEventListener('click', () => removeBreak(brk));
 
-    if (error) { toast('Failed to restore card'); return; }
+  return card;
+}
 
-    hiddenCards[student.id] = (hiddenCards[student.id] || []).filter(d => d !== day);
-    const parent = wrap.parentNode;
-    parent.replaceChild(buildCard(student, day), wrap);
-    renderSummaryStrip();
-  });
+/* Undo a day off from the tracker. Only one-day breaks can be
+   removed here — a multi-day planned break is managed in Plan Week,
+   so one click can't wipe out all of Thanksgiving. */
+async function removeBreak(brk) {
+  if (readOnly) return;
+  if (brk.start_date !== brk.end_date) {
+    toast('This is part of a planned break — change it in Plan Week');
+    return;
+  }
+  if (!confirm('Remove this day off? The day\'s courses will count again.')) return;
 
-  return wrap;
+  const { error } = await supabase.from('breaks').delete().eq('id', brk.id);
+  if (error) { console.error('remove break:', error); toast('Failed to remove day off'); return; }
+
+  breaks = breaks.filter(b => b.id !== brk.id);
+  renderGrid();
+  toast('Day off removed');
 }
 
 /* ── CARD CONTEXT MENU ──────────────────────────────────────── */
@@ -416,11 +502,13 @@ function openCardMenu(btn, student, day) {
 
   const menu = document.createElement('div');
   menu.className = 'dropdown-menu dropdown-menu-portal';
+  const hasNote = !!noteFor(student.id, day);
   menu.innerHTML = `
     <button class="dropdown-item" data-action="add-course">+  Add Course</button>
+    <button class="dropdown-item" data-action="note">📝  ${hasNote ? 'Edit Note' : 'Add Note'}</button>
+    <button class="dropdown-item" data-action="day-off">🌙  Mark Day Off</button>
     <button class="dropdown-item" data-action="edit-defaults">📚  Edit Default Courses</button>
     <button class="dropdown-item" data-action="edit-name">✏️  Edit Name</button>
-    <button class="dropdown-item" data-action="hide-day">🚫  Hide card this day</button>
     <button class="dropdown-item danger" data-action="delete">🗑  Remove Student</button>
   `;
 
@@ -440,26 +528,14 @@ function openCardMenu(btn, student, day) {
     openDefaultsModal(student);
   });
 
-  menu.querySelector('[data-action="hide-day"]').addEventListener('click', async () => {
+  menu.querySelector('[data-action="note"]').addEventListener('click', () => {
     closeAllDropdowns();
+    openNoteModal(student, day);
+  });
 
-    // Upsert week_cards hidden row
-    const { error } = await supabase
-      .from('week_cards')
-      .upsert({
-        week_key   : weekKey,
-        student_id : student.id,
-        day,
-        hidden     : true,
-      }, { onConflict: 'week_key,student_id,day' });
-
-    if (error) { toast('Failed to hide card'); console.error(error); return; }
-
-    if (!hiddenCards[student.id]) hiddenCards[student.id] = [];
-    if (!hiddenCards[student.id].includes(day)) hiddenCards[student.id].push(day);
-
-    renderGrid();
-    toast(`${student.name} hidden on ${day}`);
+  menu.querySelector('[data-action="day-off"]').addEventListener('click', () => {
+    closeAllDropdowns();
+    openDayOffModal(student, day);
   });
 
   menu.querySelector('[data-action="edit-name"]').addEventListener('click', () => {
@@ -505,6 +581,153 @@ async function editStudentName(student) {
   student.name = name.trim();
   renderGrid();
   renderStudentList();
+}
+
+/* ── NOTE MODAL ─────────────────────────────────────────────── */
+let _noteStudent = null;
+let _noteDay     = null;
+let _noteSaving  = false;
+
+function openNoteModal(student, day) {
+  _noteStudent = student;
+  _noteDay     = day;
+  const existing = noteFor(student.id, day);
+
+  document.getElementById('note-title').textContent = `Note for ${student.name} · ${day}`;
+  document.getElementById('note-text').value = existing ? existing.note : '';
+  document.getElementById('note-delete').classList.toggle('hidden', !existing);
+
+  showModal('modal-note');
+  setTimeout(() => document.getElementById('note-text').focus(), 60);
+}
+
+document.getElementById('note-save').addEventListener('click', saveNote);
+document.getElementById('note-delete').addEventListener('click', () => {
+  document.getElementById('note-text').value = '';
+  saveNote();
+});
+document.getElementById('note-text').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) saveNote();   // ⌘↩ saves
+});
+
+/* Empty text deletes the note; otherwise upsert one row per student/day/week */
+async function saveNote() {
+  if (_noteSaving) return;
+  _noteSaving = true;
+
+  const text = document.getElementById('note-text').value.trim();
+  const key  = `${_noteStudent.id}|${_noteDay}`;
+
+  try {
+    if (!text) {
+      if (notes[key]) {
+        const { error } = await supabase.from('day_notes').delete().eq('id', notes[key].id);
+        if (error) throw error;
+        delete notes[key];
+        toast('Note removed');
+      }
+    } else {
+      const { data, error } = await supabase
+        .from('day_notes')
+        .upsert({
+          week_key   : weekKey,
+          student_id : _noteStudent.id,
+          day        : _noteDay,
+          note       : text,
+          updated_at : new Date().toISOString(),
+        }, { onConflict: 'week_key,student_id,day' })
+        .select()
+        .single();
+      if (error) throw error;
+      notes[key] = data;
+      toast('Note saved');
+    }
+    closeModal('modal-note');
+    renderGrid();
+  } catch (err) {
+    console.error('save note:', err);
+    toast('Failed to save note — try again');
+  } finally {
+    _noteSaving = false;
+  }
+}
+
+/* ── DAY OFF MODAL ──────────────────────────────────────────── */
+let _offStudent = null;
+let _offDay     = null;
+let _offScope   = 'one';   // 'one' | 'all'
+let _offSaving  = false;
+
+function openDayOffModal(student, day) {
+  _offStudent = student;
+  _offDay     = day;
+  _offScope   = 'one';
+
+  document.getElementById('off-title').textContent = `Mark ${day} Off`;
+  document.getElementById('off-just').textContent  = `Just ${student.name}`;
+  document.getElementById('off-reason').value = '';
+  syncOffScope();
+
+  showModal('modal-day-off');
+  setTimeout(() => document.getElementById('off-reason').focus(), 60);
+}
+
+function syncOffScope() {
+  document.getElementById('off-just').classList.toggle('active', _offScope === 'one');
+  document.getElementById('off-all').classList.toggle('active',  _offScope === 'all');
+}
+
+document.getElementById('off-just').addEventListener('click', () => { _offScope = 'one'; syncOffScope(); });
+document.getElementById('off-all').addEventListener('click',  () => { _offScope = 'all'; syncOffScope(); });
+document.getElementById('off-save').addEventListener('click', saveDayOff);
+document.getElementById('off-reason').addEventListener('keydown', e => {
+  if (e.key === 'Enter') saveDayOff();
+});
+
+async function saveDayOff() {
+  if (_offSaving) return;
+
+  const date   = dateForDay(_offDay);
+  const reason = document.getElementById('off-reason').value.trim() || null;
+  const studentId = _offScope === 'all' ? null : _offStudent.id;
+
+  // Already covered? (e.g. an all-students day off is already set)
+  if (_offScope === 'all' ? allOffBreak(_offDay) : isOff(_offStudent.id, _offDay)) {
+    toast('That day is already marked off');
+    return;
+  }
+
+  _offSaving = true;
+  const btn = document.getElementById('off-save');
+  btn.disabled = true;
+
+  try {
+    const { data, error } = await supabase
+      .from('breaks')
+      .insert({
+        start_date : date,
+        end_date   : date,
+        student_id : studentId,
+        reason,
+        created_by : adminProfile.id,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+
+    breaks.push(data);
+    closeModal('modal-day-off');
+    renderGrid();
+    toast(_offScope === 'all'
+      ? `${_offDay} marked off for all students`
+      : `${_offStudent.name} marked off on ${_offDay}`);
+  } catch (err) {
+    console.error('day off:', err);
+    toast('Failed to mark day off — try again');
+  } finally {
+    _offSaving = false;
+    btn.disabled = false;
+  }
 }
 
 /* ── ADD COURSE MODAL ───────────────────────────────────────── */
@@ -761,10 +984,7 @@ function renderSummaryStrip() {
   card.className = 'summary-card';
 
   students.forEach(student => {
-    const studentInstances = instances.filter(i =>
-      i.student_id === student.id && !i.hidden &&
-      !(hiddenCards[student.id] || []).includes(i.day)
-    );
+    const studentInstances = countedInstances(student.id);
     const total = studentInstances.length;
     const done  = studentInstances.filter(i => i.completed).length;
     const pct   = total === 0 ? 0 : Math.round((done / total) * 100);
@@ -800,10 +1020,7 @@ function updateSummaryStudent(studentId) {
   const student = students.find(s => s.id === studentId);
   if (!student) return;
 
-  const studentInstances = instances.filter(i =>
-    i.student_id === studentId && !i.hidden &&
-    !(hiddenCards[studentId] || []).includes(i.day)
-  );
+  const studentInstances = countedInstances(studentId);
   const total = studentInstances.length;
   const done  = studentInstances.filter(i => i.completed).length;
   const pct   = total === 0 ? 0 : Math.round((done / total) * 100);
@@ -902,9 +1119,31 @@ document.getElementById('btn-close-week').addEventListener('click', async () => 
     return;
   }
 
-  // Copy instances to archive_instances
-  if (instances.length > 0) {
-    const archiveRows = instances.map(inst => {
+  // Snapshot days off (frozen — later edits to breaks won't change this week)
+  const offRows = [];
+  DAYS.forEach(day => {
+    const all = allOffBreak(day);
+    if (all) {
+      offRows.push({ archive_week_id: archiveWeek.id, student_id: null,
+                     student_name: null, day, reason: all.reason });
+      return;
+    }
+    students.forEach(s => {
+      const b = offBreakFor(s.id, day);
+      if (b) offRows.push({ archive_week_id: archiveWeek.id, student_id: s.id,
+                            student_name: s.name, day, reason: b.reason });
+    });
+  });
+  if (offRows.length) {
+    const { error: offErr } = await supabase.from('archive_days_off').insert(offRows);
+    if (offErr) console.error('archive_days_off insert:', offErr);
+  }
+
+  // Copy instances to archive_instances — courses on a day off are
+  // cancelled, so they aren't archived at all
+  const toArchive = instances.filter(i => !isOff(i.student_id, i.day));
+  if (toArchive.length > 0) {
+    const archiveRows = toArchive.map(inst => {
       const student = students.find(s => s.id === inst.student_id);
       return {
         archive_week_id : archiveWeek.id,
@@ -935,7 +1174,8 @@ document.getElementById('btn-close-week').addEventListener('click', async () => 
 
   // Reload
   await loadInstances();
-  await loadHiddenCards();
+  await loadNotes();
+  await loadBreaks();
   updateWeekLabel();
   renderGrid();
   toast('Week archived ✓ — backup downloaded');
@@ -1003,7 +1243,7 @@ async function init() {
   await loadStudents();
   await loadLibrary();
   await loadInstances();
-  await loadHiddenCards();
+  await Promise.all([loadNotes(), loadBreaks()]);
 
   renderGrid();
 

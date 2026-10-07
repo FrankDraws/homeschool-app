@@ -875,26 +875,84 @@ body {
   opacity: 1;
 }
 
-/* ─── HIDDEN CARD STATE ──────────────────────────────────── */
-.card-hidden-day {
-  opacity: 0.55;
-  border-style: dashed;
+/* ─── NOTE CALLOUT (bottom of card) ──────────────────────── */
+.card-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 8px 12px 9px;
+  border-top: 1px solid var(--border-light);
+  background: var(--warn-light);
+  color: var(--note-text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.45;
+  cursor: pointer;
+  word-break: break-word;
+}
+.card-note-icon { flex-shrink: 0; }
+
+/* ─── DAY OFF ────────────────────────────────────────────── */
+/* Lavender = "day off". Kept separate from the student palette
+   so it never reads as a student's color. */
+:root {
+  --off:          #6a66a3;
+  --off-light:    #efeef7;
+  --off-gray:     #efede8;
+  --off-gray-text:#9a968f;
+  --note-text:    #c97d12;
 }
 
-.card-hidden-day:hover {
-  opacity: 0.75;
+/* Banner above the day's cards (all students off) */
+.day-off-banner {
+  background: var(--off-light);
+  color: var(--off);
+  border-radius: var(--radius);
+  padding: 9px 12px 10px;
+  font-size: 0.78rem;
+  line-height: 1.45;
 }
-
-.card-header-muted {
-  opacity: 0.8;
+.day-off-banner-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
 }
+.day-off-tag {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.day-off-reason {
+  font-weight: 600;
+  margin-top: 2px;
+}
+.day-off-remove { color: var(--off); }
 
-.card-hidden-msg {
+/* Collapsed card: gray header, no courses */
+.card-off { box-shadow: none; }
+.card-off:hover { box-shadow: var(--shadow-sm); }
+
+.card-header-off { background: var(--off-gray); }
+.card-header-off .card-avatar,
+.card-header-off .card-name { color: var(--off-gray-text); }
+
+.card-off-msg {
+  padding: 8px 12px;
   font-size: 0.75rem;
+  font-weight: 600;
   color: var(--text-muted);
-  font-style: italic;
-  text-align: center;
-  padding: 8px 6px;
+}
+.card-off-reason {
+  padding: 8px 12px 9px;
+  background: var(--off-light);
+  color: var(--off);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.45;
+  word-break: break-word;
 }
 
 .card-restore-btn {
@@ -902,9 +960,10 @@ body {
   opacity: 0;
   transition: opacity var(--transition);
 }
+.card-off:hover .card-restore-btn { opacity: 1; }
 
-.card-hidden-day:hover .card-restore-btn {
-  opacity: 1;
+@media (hover: none) {
+  .card-restore-btn { opacity: 1; }
 }
 
 /* ─── PORTAL DROPDOWN ────────────────────────────────────── */

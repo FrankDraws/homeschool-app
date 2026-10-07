@@ -46,7 +46,24 @@
   /* Closed (archived) week: view only */
   .read-only .card-actions,
   .read-only .course-remove,
-  .read-only .card-restore-btn { display: none !important; }
+  .read-only .card-restore-btn,
+  .read-only .day-off-remove { display: none !important; }
+  .read-only .card-note { cursor: default; }
+
+  #note-text {
+    width: 100%;
+    min-height: 110px;
+    resize: vertical;
+    line-height: 1.5;
+    font-family: var(--font-body);
+  }
+  #off-reason { width: 100%; margin-bottom: 4px; }
+  .modal-footer-split {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
   .read-only .course-item input { cursor: default; }
 
   /* Touch screens (iPad, phone) have no hover — keep the
@@ -153,6 +170,49 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-primary" id="def-add" type="button">+ Add Course</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Note (from card menu) -->
+<div class="modal-backdrop hidden" id="modal-note">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="note-title">Note</h2>
+      <button class="modal-close" data-close="modal-note">✕</button>
+    </div>
+    <div class="modal-body">
+      <textarea class="input-inline" id="note-text"
+        placeholder="e.g. Finish chapter 3 tomorrow"></textarea>
+    </div>
+    <div class="modal-footer modal-footer-split">
+      <button class="btn btn-danger hidden" id="note-delete" type="button">Delete Note</button>
+      <button class="btn btn-primary" id="note-save" type="button" style="margin-left:auto">Save Note</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Mark Day Off (from card menu) -->
+<div class="modal-backdrop hidden" id="modal-day-off">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="off-title">Mark Day Off</h2>
+      <button class="modal-close" data-close="modal-day-off">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="field-label">Who's off</p>
+      <div class="day-picker-shortcuts" style="margin-bottom:18px">
+        <button class="btn btn-ghost btn-sm scope-btn" id="off-just" type="button">Just this student</button>
+        <button class="btn btn-ghost btn-sm scope-btn" id="off-all" type="button">All students</button>
+      </div>
+      <p class="field-label">Reason (optional)</p>
+      <input class="input-inline" id="off-reason" placeholder="e.g. Sick, family day, field trip" autocomplete="off">
+      <p class="modal-note" style="margin-top:10px;margin-bottom:0">
+        That day's courses are cancelled — they won't count toward totals or carry over.
+      </p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" id="off-save" type="button">Mark Day Off</button>
     </div>
   </div>
 </div>
