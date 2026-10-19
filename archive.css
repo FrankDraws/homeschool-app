@@ -303,6 +303,37 @@ html, body {
   padding: 4px 0;
 }
 
+/* ─── DAY OFF (lavender, same as the tracker) ────────────── */
+.detail-day-col.day-off {
+  background: var(--off-light, #efeef7);
+}
+
+.detail-day-col.day-off .detail-day-label {
+  color: var(--off, #6a66a3);
+  border-bottom-color: rgba(106, 102, 163, 0.18);
+}
+
+.detail-day-off {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: var(--off, #6a66a3);
+  padding: 2px 0;
+}
+
+.detail-day-off-tag {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.detail-day-off-reason {
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
 /* ─── SEARCH ─────────────────────────────────────────────── */
 .archive-search {
   width: 220px;

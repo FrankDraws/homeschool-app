@@ -20,6 +20,7 @@ const PALETTE_H = ['#e8a040','#4a90d9','#3aaa60','#8a50d0','#d06060','#30a0b8'];
 let _archive    = [];   // archive_weeks rows
 let _students   = [];   // profiles rows (students)
 let _instances  = {};   // archiveWeekId → [archive_instances rows]
+let _daysOff    = {};   // archiveWeekId → [archive_days_off rows]
 let _current    = null; // currently selected archive_week
 
 /* ── LOAD ── */
@@ -51,6 +52,32 @@ async function loadInstancesForWeek(archiveWeekId) {
     .eq('archive_week_id', archiveWeekId);
   if (error) { console.error('loadInstances:', error); return; }
   _instances[archiveWeekId] = data || [];
+}
+
+/* Days off frozen at Close Week. student_id NULL = all students. */
+async function loadDaysOffForWeek(archiveWeekId) {
+  if (_daysOff[archiveWeekId]) return; // cached
+
+  const { data, error } = await supabase
+    .from('archive_days_off')
+    .select('*')
+    .eq('archive_week_id', archiveWeekId);
+  if (error) { console.error('loadDaysOff:', error); _daysOff[archiveWeekId] = []; return; }
+  _daysOff[archiveWeekId] = data || [];
+}
+
+/* The day-off row for this student on this day, or null.
+   An all-students row wins over a single-student one. */
+function dayOffFor(archiveWeekId, studentId, day) {
+  const rows = _daysOff[archiveWeekId] || [];
+  return rows.find(r => r.day === day && r.student_id === null)
+      || rows.find(r => r.day === day && r.student_id === studentId)
+      || null;
+}
+
+/* Load everything one week needs */
+async function loadWeek(archiveWeekId) {
+  await Promise.all([loadInstancesForWeek(archiveWeekId), loadDaysOffForWeek(archiveWeekId)]);
 }
 
 /* ── UTILS ── */
@@ -113,7 +140,7 @@ function renderSidebar(filter = '') {
     `;
     item.addEventListener('click', async () => {
       _current = entry;
-      await loadInstancesForWeek(entry.id);
+      await loadWeek(entry.id);
       renderSidebar(document.getElementById('archive-search').value);
       renderDetail(entry);
     });
@@ -219,7 +246,15 @@ function renderDetail(entry) {
         i => i.student_id === student.id && i.day === day && !i.hidden
       );
 
-      if (dayInsts.length === 0) {
+      const off = dayOffFor(entry.id, student.id, day);
+      if (off) {
+        col.classList.add('day-off');
+        col.innerHTML += `
+          <div class="detail-day-off">
+            <span class="detail-day-off-tag">🌙 Off${off.student_id === null ? ' · all' : ''}</span>
+            ${off.reason ? `<span class="detail-day-off-reason">${escHtml(off.reason)}</span>` : ''}
+          </div>`;
+      } else if (dayInsts.length === 0) {
         col.innerHTML += `<div class="detail-day-no-school">—</div>`;
       } else {
         dayInsts.forEach(inst => {
@@ -263,8 +298,8 @@ async function init() {
 
   await Promise.all([loadArchive(), loadStudents()]);
 
-  // Pre-load instances for all weeks (they're small)
-  await Promise.all(_archive.map(w => loadInstancesForWeek(w.id)));
+  // Pre-load instances + days off for all weeks (they're small)
+  await Promise.all(_archive.map(w => loadWeek(w.id)));
 
   const sub = document.getElementById('archive-subtitle');
   sub.textContent = _archive.length === 0
