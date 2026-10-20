@@ -334,6 +334,22 @@ html, body {
   word-break: break-word;
 }
 
+/* ─── NOTE (amber, same as the tracker) ──────────────────── */
+.detail-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm, 8px);
+  background: var(--warn-light, #fef4e5);
+  color: var(--note-text, #c97d12);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
 /* ─── SEARCH ─────────────────────────────────────────────── */
 .archive-search {
   width: 220px;

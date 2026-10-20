@@ -21,6 +21,7 @@ let _archive    = [];   // archive_weeks rows
 let _students   = [];   // profiles rows (students)
 let _instances  = {};   // archiveWeekId → [archive_instances rows]
 let _daysOff    = {};   // archiveWeekId → [archive_days_off rows]
+let _notes      = {};   // archiveWeekId → [day_notes rows]
 let _current    = null; // currently selected archive_week
 
 /* ── LOAD ── */
@@ -75,9 +76,31 @@ function dayOffFor(archiveWeekId, studentId, day) {
       || null;
 }
 
+/* Notes are read straight from day_notes, not copied at Close Week.
+   A closed week is read-only in the tracker, so its notes can't change. */
+async function loadNotesForWeek(entry) {
+  if (_notes[entry.id]) return; // cached
+
+  const { data, error } = await supabase
+    .from('day_notes')
+    .select('*')
+    .eq('week_key', entry.week_key);
+  if (error) { console.error('loadNotes:', error); _notes[entry.id] = []; return; }
+  _notes[entry.id] = data || [];
+}
+
+function noteFor(archiveWeekId, studentId, day) {
+  return (_notes[archiveWeekId] || [])
+    .find(n => n.student_id === studentId && n.day === day) || null;
+}
+
 /* Load everything one week needs */
-async function loadWeek(archiveWeekId) {
-  await Promise.all([loadInstancesForWeek(archiveWeekId), loadDaysOffForWeek(archiveWeekId)]);
+async function loadWeek(entry) {
+  await Promise.all([
+    loadInstancesForWeek(entry.id),
+    loadDaysOffForWeek(entry.id),
+    loadNotesForWeek(entry),
+  ]);
 }
 
 /* ── UTILS ── */
@@ -140,7 +163,7 @@ function renderSidebar(filter = '') {
     `;
     item.addEventListener('click', async () => {
       _current = entry;
-      await loadWeek(entry.id);
+      await loadWeek(entry);
       renderSidebar(document.getElementById('archive-search').value);
       renderDetail(entry);
     });
@@ -268,6 +291,15 @@ function renderDetail(entry) {
         });
       }
 
+      // Note — same rule as the tracker: a day off shows its reason, not a note
+      const note = off ? null : noteFor(entry.id, student.id, day);
+      if (note) {
+        const n = document.createElement('div');
+        n.className = 'detail-note';
+        n.innerHTML = `<span>📝</span><span>${escHtml(note.note)}</span>`;
+        col.appendChild(n);
+      }
+
       dayGrid.appendChild(col);
     });
 
@@ -299,7 +331,7 @@ async function init() {
   await Promise.all([loadArchive(), loadStudents()]);
 
   // Pre-load instances + days off for all weeks (they're small)
-  await Promise.all(_archive.map(w => loadWeek(w.id)));
+  await Promise.all(_archive.map(w => loadWeek(w)));
 
   const sub = document.getElementById('archive-subtitle');
   sub.textContent = _archive.length === 0
