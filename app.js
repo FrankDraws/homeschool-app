@@ -7,7 +7,8 @@ import { supabase }                              from './supabase.js';
 import { requireAdmin, logout }                  from './auth.js';
 import { autoExportOnCloseWeek, checkPeriodicExport } from './export.js';
 import { addWeeks, weekLabel, isCalendarWeek, isWeekClosed,
-         resolveActiveWeekKey, weekKeyFromURL } from './week.js';
+         resolveActiveWeekKey, weekKeyFromURL,
+         findUnclosedPastWeeks } from './week.js';
 
 /* ── CONSTANTS ─────────────────────────────────────────────── */
 const DAYS      = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
@@ -24,6 +25,14 @@ let breaks       = [];   // breaks rows overlapping the current week
 let weekKey      = '';   // the week being shown
 let activeKey    = '';   // the week the household is working on (first unclosed)
 let readOnly     = false; // true when weekKey is already archived
+let unclosed     = [];   // past week keys with courses that were never closed
+
+/* Close Week is allowed on the current week, or on a past week
+   that was never closed (so it can be reviewed, then archived). */
+function canCloseWeek() {
+  if (readOnly) return false;
+  return weekKey === activeKey || unclosed.includes(weekKey);
+}
 
 /* ── WEEK KEY ───────────────────────────────────────────────── */
 /* getWeekKey / addWeeks / weekLabel now live in week.js */
@@ -1097,9 +1106,14 @@ function renderStudentList() {
 
 /* ── CLOSE WEEK ─────────────────────────────────────────────── */
 document.getElementById('btn-close-week').addEventListener('click', async () => {
-  // Only the current week can be closed — never a future or archived one
-  if (weekKey !== activeKey || readOnly) return;
-  if (!confirm(`Archive the week of ${weekLabel(weekKey)}?`)) return;
+  // Only the current week, or a past week that was never closed —
+  // never a future or already-archived one
+  if (!canCloseWeek()) return;
+  const closingPast = weekKey !== activeKey;
+  const question = closingPast
+    ? `Archive the week of ${weekLabel(weekKey)}?\n\nThis is a past week. Make sure the check-offs and days off are right first — once archived, it's view only.`
+    : `Archive the week of ${weekLabel(weekKey)}?`;
+  if (!confirm(question)) return;
 
   // Insert archive_week row
   const { data: archiveWeek, error: awError } = await supabase
@@ -1166,10 +1180,17 @@ document.getElementById('btn-close-week').addEventListener('click', async () => 
   // Auto-export JSON backup
   autoExportOnCloseWeek(weekLabel(weekKey));
 
-  // Advance to next week (a reload lands here too, because
-  // resolveActiveWeekKey() skips archived weeks)
-  activeKey = addWeeks(weekKey, 1);
-  weekKey   = activeKey;
+  if (closingPast) {
+    // A late close: the current week doesn't change. Go back to it.
+    unclosed = unclosed.filter(k => k !== weekKey);
+    weekKey  = activeKey;
+    history.replaceState(null, '', 'index.html');
+  } else {
+    // Advance to next week (a reload lands here too, because
+    // resolveActiveWeekKey() skips archived weeks)
+    activeKey = addWeeks(weekKey, 1);
+    weekKey   = activeKey;
+  }
   readOnly  = false;
 
   // Reload
@@ -1212,16 +1233,30 @@ function updateWeekLabel() {
   document.getElementById('link-planner').href =
     isActive ? 'planner.html' : `planner.html?week=${weekKey}`;
 
-  // Close Week only makes sense on the current week
-  document.getElementById('btn-close-week').classList.toggle('hidden', !isActive);
+  // Close Week: the current week, or a past week never closed
+  document.getElementById('btn-close-week').classList.toggle('hidden', !canCloseWeek());
 
   // Closed weeks are view-only
   document.getElementById('week-grid').classList.toggle('read-only', readOnly);
 
-  // Banner when looking at any week other than the current one
   const banner = document.getElementById('week-banner');
+
   if (isActive) {
-    banner.classList.add('hidden');
+    // On the current week: warn about any past week left open
+    if (unclosed.length === 0) {
+      banner.classList.add('hidden');
+    } else {
+      const oldest = unclosed[0];
+      const lead = unclosed.length === 1
+        ? `The week of ${weekLabel(oldest)} was never closed.`
+        : `${unclosed.length} past weeks were never closed, starting with ${weekLabel(oldest)}.`;
+      banner.innerHTML = `⚠ ${lead} <a href="index.html?week=${oldest}">Review and close it</a>`;
+      banner.classList.remove('hidden');
+    }
+  } else if (unclosed.includes(weekKey)) {
+    // Reviewing a past week that was never closed
+    banner.innerHTML = `This past week was never closed. Check the boxes and days off, then use Close Week. <a href="index.html">Back to current week</a>`;
+    banner.classList.remove('hidden');
   } else {
     const what = readOnly ? 'a closed week (view only)'
                : weekKey > activeKey ? 'an upcoming week' : 'a past week';
@@ -1236,6 +1271,7 @@ async function init() {
   if (!adminProfile) return;
 
   activeKey = await resolveActiveWeekKey();
+  unclosed  = await findUnclosedPastWeeks(activeKey);
   weekKey   = weekKeyFromURL() || activeKey;
   readOnly  = weekKey !== activeKey && await isWeekClosed(weekKey);
   updateWeekLabel();

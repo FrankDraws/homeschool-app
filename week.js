@@ -62,6 +62,34 @@ export async function resolveActiveWeekKey() {
   return key;
 }
 
+/* Past weeks that have planned courses but were never closed.
+   Looks back `lookback` weeks before the active week. Returns
+   week keys, oldest first. A week whose rows are all hidden has
+   nothing to archive, so it isn't flagged. */
+export async function findUnclosedPastWeeks(activeKey, lookback = 12) {
+  const since = addWeeks(activeKey, -lookback);
+
+  const { data: rows, error } = await supabase
+    .from('week_instances')
+    .select('week_key')
+    .eq('hidden', false)
+    .gte('week_key', since)
+    .lt('week_key', activeKey);
+  if (error) { console.error('findUnclosedPastWeeks:', error); return []; }
+
+  const keys = [...new Set((rows || []).map(r => r.week_key))];
+  if (keys.length === 0) return [];
+
+  const { data: closed, error: cErr } = await supabase
+    .from('archive_weeks')
+    .select('week_key')
+    .in('week_key', keys);
+  if (cErr) { console.error('findUnclosedPastWeeks:', cErr); return []; }
+
+  const closedSet = new Set((closed || []).map(r => r.week_key));
+  return keys.filter(k => !closedSet.has(k)).sort();
+}
+
 /* ?week=YYYY-MM-DD in the URL, if present and valid. */
 export function weekKeyFromURL() {
   const raw = new URLSearchParams(location.search).get('week');
